@@ -209,12 +209,25 @@ function nowId(dateStr, tema){ return `${dateStr || 'sem-data'}__${slugify(tema|
 function groupLetter(i){ return String.fromCharCode(65+i); }
 
 async function createBucket(){
-  try {
-    const res = await fetch("https://kvdb.io/", { method: "POST", body: "email=arena@inves.com.br" });
-    if (!res.ok) return null;
-    const id = (await res.text()).trim();
-    return id || null;
-  } catch(e){ console.error("createBucket failed", e); return null; }
+  const tryOnce = async (body) => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+      const res = await fetch("https://kvdb.io/", { method: "POST", body, signal: controller.signal });
+      clearTimeout(timeout);
+      if (!res.ok) return null;
+      const id = (await res.text()).trim();
+      return id || null;
+    } catch(e){
+      clearTimeout(timeout);
+      console.error("createBucket attempt failed", e);
+      return null;
+    }
+  };
+  // Tenta primeiro sem corpo (bucket anônimo), depois com e-mail como alternativa.
+  let id = await tryOnce(undefined);
+  if (!id) id = await tryOnce("email=arena@inves.com.br");
+  return id;
 }
 async function storageGet(bucket, key){
   if (!bucket) return null;
@@ -264,10 +277,16 @@ function App(){
     if (b) { setBucket(b); } else { setLoading(false); }
   }, []);
 
+  const [roomError, setRoomError] = useState("");
   const handleCreateRoom = async () => {
     setCreatingRoom(true);
+    setRoomError("");
     const id = await createBucket();
-    if (!id) { showToast("Não foi possível criar a sala agora. Tente de novo em alguns segundos."); setCreatingRoom(false); return; }
+    if (!id) {
+      setRoomError("Não foi possível criar a sala agora. Pode ser uma instabilidade momentânea — clique em \"Tentar novamente\" abaixo. Se continuar falhando, pode ser que o site https://kvdb.io esteja bloqueado na sua rede (tente pelo celular com os dados móveis, sem wi-fi, para testar).");
+      setCreatingRoom(false);
+      return;
+    }
     const url = new URL(window.location.href);
     url.searchParams.set("sala", id);
     window.location.href = url.toString();
@@ -401,8 +420,14 @@ function App(){
           <div className="big">Primeiro acesso — crie a sala do Arena Invés</div>
           <p className="muted-note">Isso cria um espaço de armazenamento compartilhado (gratuito, sem cadastro) onde ficam as inscrições, os grupos e o placar. Faça isso <b>uma única vez</b>; depois disso, use sempre o mesmo link para tudo — configurar, se inscrever e acompanhar o placar.</p>
           <div style={{ marginTop: 16 }}>
-            <button className="btn btn-primary" disabled={creatingRoom} onClick={handleCreateRoom}>{creatingRoom ? "Criando sala…" : "Criar sala do Arena Invés"}</button>
+            <button className="btn btn-primary" disabled={creatingRoom} onClick={handleCreateRoom}>{creatingRoom ? "Criando sala…" : (roomError ? "Tentar novamente" : "Criar sala do Arena Invés")}</button>
           </div>
+          {roomError && (
+            <div className="card" style={{ marginTop: 14, borderColor: "var(--danger)", background: "rgba(224,85,111,0.08)", textAlign: "left" }}>
+              <b style={{ color: "var(--danger)" }}>Não deu certo</b>
+              <p className="muted-note" style={{ marginTop: 6 }}>{roomError}</p>
+            </div>
+          )}
         </div>
       </div>
     );
