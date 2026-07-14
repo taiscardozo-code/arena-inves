@@ -223,9 +223,9 @@ async function createBucket(){
       return { id: null, error: (e && e.name === "AbortError") ? "tempo esgotado (sem resposta em 10s)" : `falha de rede (${e && e.message ? e.message : e})` };
     }
   };
-  let r1 = await tryOnce(new URLSearchParams({ email: "arena@inves.com.br" }));
+  let r1 = await tryOnce(undefined);
   if (r1.id) return r1;
-  let r2 = await tryOnce(undefined);
+  let r2 = await tryOnce(new URLSearchParams({ email: "arena@inves.com.br" }));
   if (r2.id) return r2;
   return { id: null, error: `Tentativa 1: ${r1.error} · Tentativa 2: ${r2.error}` };
 }
@@ -456,7 +456,7 @@ function App(){
             </div>
           )}
         </div>
-        <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v10</div>
+        <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v11</div>
       </div>
     );
   }
@@ -481,7 +481,7 @@ function App(){
         </div>
         <AssessorView config={config} regs={regs} roster={roster} onRegister={register} onLogMeeting={logMeeting} />
         <Toast msg={toast} />
-        <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v10</div>
+        <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v11</div>
       </div>
     );
   }
@@ -531,7 +531,7 @@ function App(){
       )}
 
       <Toast msg={toast} />
-      <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v10</div>
+      <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v11</div>
     </div>
   );
 }
