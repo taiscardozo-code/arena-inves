@@ -277,6 +277,8 @@ function App(){
     if (b) { setBucket(b); } else { setLoading(false); }
   }, []);
 
+  const papel = new URLSearchParams(window.location.search).get("papel") || "lider";
+
   const [roomError, setRoomError] = useState("");
   const handleCreateRoom = async () => {
     setCreatingRoom(true);
@@ -429,12 +431,34 @@ function App(){
             </div>
           )}
         </div>
+        <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v7</div>
       </div>
     );
   }
 
   if (loading) {
     return <div className="arena-wrap"><div className="empty-state"><div className="big">Carregando Arena Invés…</div></div></div>;
+  }
+
+  if (papel === "assessor") {
+    return (
+      <div className="arena-wrap">
+        <div className="arena-header">
+          <div>
+            <h1 className="arena-title"><b>Arena</b> Invés</h1>
+            <div className="arena-sub">Assessores SP &amp; BH</div>
+          </div>
+          {config ? (
+            <span className={"arena-status-pill " + (config.status === "aberta" ? "status-aberta" : "status-encerrada")}>
+              {config.status === "aberta" ? "Inscrições abertas" : "Inscrições encerradas"}
+            </span>
+          ) : <span className="arena-status-pill status-none">Nenhum arena ativo</span>}
+        </div>
+        <AssessorView config={config} regs={regs} roster={roster} onRegister={register} onLogMeeting={logMeeting} />
+        <Toast msg={toast} />
+        <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v7</div>
+      </div>
+    );
   }
 
   return (
@@ -482,6 +506,7 @@ function App(){
       )}
 
       <Toast msg={toast} />
+      <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v7</div>
     </div>
   );
 }
@@ -503,10 +528,14 @@ function ConfigTab({ config, roster, shareUrl, onStart, onToggleStatus, onUpdate
     onStart({ date, tema, numGroups });
   };
 
-  const copyLink = async () => {
-    try { await navigator.clipboard.writeText(shareUrl); showToast("Link copiado."); }
+  const copyLink = async (url) => {
+    try { await navigator.clipboard.writeText(url); showToast("Link copiado."); }
     catch(e){ showToast("Não foi possível copiar automaticamente — selecione o link manualmente."); }
   };
+
+  const baseUrl = (() => { try { const u = new URL(shareUrl); u.searchParams.delete("papel"); return u; } catch(e){ return null; } })();
+  const liderLink = baseUrl ? baseUrl.toString() : shareUrl;
+  const assessorLink = (() => { if (!baseUrl) return shareUrl; const u = new URL(baseUrl); u.searchParams.set("papel", "assessor"); return u.toString(); })();
 
   const applyRoster = () => {
     const lines = rosterText.split("\n").map(l => l.trim()).filter(Boolean);
@@ -569,18 +598,27 @@ function ConfigTab({ config, roster, shareUrl, onStart, onToggleStatus, onUpdate
       )}
 
       <div className="card">
-        <h3><span className="eyebrow">Passo 2</span>Link e QR code para inscrição</h3>
+        <h3><span className="eyebrow">Passo 2</span>Link para os assessores (projete este QR)</h3>
         <div className="qr-box">
-          <img className="qr-img" alt="QR code de inscrição" src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(shareUrl)}`} />
+          <img className="qr-img" alt="QR code de inscrição dos assessores" src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(assessorLink)}`} />
           <div style={{ flex: 1, minWidth: 220 }}>
             <div className="link-row">
-              <div className="link-box">{shareUrl}</div>
-              <button className="btn btn-sm" onClick={copyLink}>Copiar link</button>
+              <div className="link-box">{assessorLink}</div>
+              <button className="btn btn-sm" onClick={()=>copyLink(assessorLink)}>Copiar link</button>
             </div>
-            <p className="muted-note">Projete o QR code na abertura do Arena. Cada assessor abre o link no celular, escolhe o próprio nome e já recebe o grupo — sem planilha manual.</p>
-            <p className="muted-note"><b>Este link já funciona para qualquer pessoa</b>, sem precisar de conta ou de publicar nada no Claude — os dados ficam salvos na nuvem (KVdb) e não na sua conta. Hospede este arquivo HTML em algum lugar com link público (ex: GitHub Pages, um servidor interno da Invés, um link de rede compartilhado) e use exatamente essa URL — com o final <code>?sala=...</code> — no QR code e no grupo do WhatsApp.</p>
+            <p className="muted-note">Esse é o link/QR que vai para o telão e para o grupo do WhatsApp. Ele abre a tela simplificada: escolher nome → ver o time → lançar reuniões agendadas → acompanhar o placar. Nada de configuração aparece aqui.</p>
           </div>
         </div>
+        <p className="muted-note"><b>Este link já funciona para qualquer pessoa</b>, sem precisar de conta — os dados ficam salvos na nuvem (KVdb). Hospede este arquivo HTML em algum lugar com link público (ex: GitHub Pages) e use exatamente essa URL no QR code.</p>
+      </div>
+
+      <div className="card">
+        <h3><span className="eyebrow">Link de administração</span>Só para você e os líderes</h3>
+        <div className="link-row">
+          <div className="link-box">{liderLink}</div>
+          <button className="btn btn-sm" onClick={()=>copyLink(liderLink)}>Copiar link</button>
+        </div>
+        <p className="muted-note">Guarde este link separado — é o que abre todas as abas (Configurar, Grupos, Placar, Histórico). Não precisa de QR code nem de ser divulgado para os assessores.</p>
       </div>
 
       <div className="card">
@@ -627,6 +665,71 @@ function MeetingCounter({ entry, onLogMeeting }) {
         <button className="btn btn-sm" onClick={() => onLogMeeting(entry.nome, -1)}>-1</button>
         <button className="btn btn-primary btn-sm" onClick={() => onLogMeeting(entry.nome, 1)}>+1 reunião agendada</button>
       </div>
+    </div>
+  );
+}
+
+function AssessorView({ config, regs, roster, onRegister, onLogMeeting }) {
+  const [selectedName, setSelectedName] = useState("");
+  const sortedRoster = useMemo(() => [...roster].sort((a, b) => a.nome.localeCompare(b.nome)), [roster]);
+  const selected = roster.find(r => r.nome === selectedName) || null;
+  const existingReg = selected ? regs.find(r => r.nome === selected.nome) : null;
+
+  if (!config) {
+    return <div className="card"><div className="empty-state"><div className="big">Nenhum Arena Invés aberto no momento</div>Peça para o líder configurar o Arena de hoje.</div></div>;
+  }
+
+  const doConfirm = async () => { if (!selected) return; await onRegister(selected); };
+
+  return (
+    <div>
+      <div className="card">
+        <h3><span className="eyebrow">Passo 1</span>Selecione seu nome</h3>
+        <select value={selectedName} onChange={e => setSelectedName(e.target.value)} style={{ width: "100%" }}>
+          <option value="">— Escolha seu nome —</option>
+          {sortedRoster.map(r => <option key={r.nome} value={r.nome}>{r.nome}</option>)}
+        </select>
+      </div>
+
+      {selected && (
+        <div className="card">
+          <h3><span className="eyebrow">Passo 2</span>Seu time</h3>
+          <div className="selected-box">
+            <div>
+              <div style={{ fontWeight: 700 }}>{selected.nome}</div>
+              <div style={{ fontSize: 12, color: "var(--text-dim)" }}>Time do(a) {selected.lider} · Ranking {selected.ranking}</div>
+            </div>
+            <TierChip cluster={selected.cluster} />
+          </div>
+
+          {!existingReg && config.status === "aberta" && (
+            <div style={{ marginTop: 14 }}>
+              <button className="btn btn-primary" onClick={doConfirm}>Confirmar minha presença</button>
+            </div>
+          )}
+          {!existingReg && config.status !== "aberta" && (
+            <p className="muted-note">As inscrições deste Arena estão encerradas no momento.</p>
+          )}
+
+          {existingReg && (
+            <>
+              <div className="confirm-group-badge" style={{ textAlign: "center" }}>Grupo {groupLetter(existingReg.grupo)}</div>
+              <h3 style={{ marginTop: 18 }}><span className="eyebrow">Passo 3</span>Reuniões agendadas</h3>
+              <MeetingCounter entry={existingReg} onLogMeeting={onLogMeeting} />
+              <ArpiumBanner />
+            </>
+          )}
+        </div>
+      )}
+
+      {selected && existingReg && (
+        <>
+          <div className="card" style={{ paddingBottom: 6 }}>
+            <h3 style={{ marginBottom: 0 }}><span className="eyebrow">Passo 4</span>Acompanhe o placar ao vivo</h3>
+          </div>
+          <PlacarTab config={config} regs={regs} />
+        </>
+      )}
     </div>
   );
 }
