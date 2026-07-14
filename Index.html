@@ -1,0 +1,992 @@
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<div id="arena-root"></div>
+<style>
+  #arena-root {
+    --bg: #0E1424;
+    --panel: #161D33;
+    --panel-light: #1E2740;
+    --border: #2A3656;
+    --text: #E8ECF5;
+    --text-dim: #97A2C0;
+    --gold: #34F634;
+    --gold-light: #7CFB7C;
+    --gold-contrast: #062B06;
+    --tier-base: #A9744F;
+    --tier-impulso: #9CA3AF;
+    --tier-trilha: #F2A93B;
+    --tier-topo: #63C7D1;
+    --tier-legado: #B79CED;
+    --tier-nc: #4B5567;
+    --danger: #E0556F;
+    --success: #34F634;
+    --font-display: 'Palatino Linotype', Palatino, 'Iowan Old Style', Georgia, serif;
+    --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+    all: initial;
+    display: block;
+    font-family: var(--font-body);
+    background: var(--bg);
+    color: var(--text);
+    border-radius: 14px;
+    padding: 0;
+    box-sizing: border-box;
+    width: 100%;
+  }
+  #arena-root *, #arena-root *::before, #arena-root *::after { box-sizing: border-box; font-family: inherit; }
+  #arena-root button { cursor: pointer; font-size: 14px; }
+  #arena-root input, #arena-root select, #arena-root textarea {
+    font-size: 14px; color: var(--text); background: var(--panel-light);
+    border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; outline: none;
+  }
+  #arena-root input:focus, #arena-root select:focus, #arena-root textarea:focus { border-color: var(--gold); }
+  #arena-root ::placeholder { color: var(--text-dim); }
+
+  .arena-wrap { padding: 22px 22px 28px; max-width: 1180px; margin: 0 auto; }
+
+  .arena-header { display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:6px; border-bottom: 1px solid var(--border); padding-bottom:16px;}
+  .arena-title { font-family: var(--font-display); font-size: 30px; letter-spacing:0.5px; color: var(--text); margin:0; }
+  .arena-title b { color: var(--gold-light); font-weight: 700; }
+  .arena-sub { color: var(--text-dim); font-size: 13px; margin-top:4px; }
+  .arena-status-pill { font-family: var(--font-mono); font-size:11px; letter-spacing:0.6px; text-transform:uppercase; padding:5px 10px; border-radius:99px; border:1px solid var(--border); white-space:nowrap;}
+  .status-aberta { color: var(--success); border-color: rgba(76,195,138,0.4); background: rgba(76,195,138,0.08);}
+  .status-encerrada { color: var(--danger); border-color: rgba(224,85,111,0.4); background: rgba(224,85,111,0.08);}
+  .status-none { color: var(--text-dim); }
+
+  .arena-tabs { display:flex; gap:6px; margin: 18px 0 20px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+  .arena-tab { background:none; border:none; color:var(--text-dim); padding:10px 14px; font-size:14px; border-bottom:2px solid transparent; margin-bottom:-1px; transition: color .15s, border-color .15s;}
+  .arena-tab:hover { color: var(--text); }
+  .arena-tab.active { color: var(--gold-light); border-bottom-color: var(--gold); font-weight:600; }
+
+  .card { background: var(--panel); border:1px solid var(--border); border-radius: 12px; padding:18px 20px; margin-bottom:16px; }
+  .card h3 { font-family: var(--font-display); font-size:17px; margin:0 0 14px; color:var(--text); font-weight:700; }
+  .card h3 .eyebrow { display:block; font-family: var(--font-mono); font-size:10px; letter-spacing:1.2px; text-transform:uppercase; color: var(--gold); margin-bottom:4px; font-weight:600;}
+
+  .field-row { display:flex; gap:14px; flex-wrap:wrap; margin-bottom:14px; }
+  .field { display:flex; flex-direction:column; gap:6px; flex:1; min-width:150px; }
+  .field label { font-size:12px; color:var(--text-dim); }
+  .field input, .field select { width:100%; }
+
+  .btn { border-radius:8px; border:1px solid var(--border); background: var(--panel-light); color:var(--text); padding:10px 16px; font-weight:600; transition: transform .1s, background .15s;}
+  .btn:hover { background:#26304F; }
+  .btn:active { transform: scale(0.98); }
+  .btn-primary { background: linear-gradient(180deg, var(--gold-light), var(--gold)); color: var(--gold-contrast); border-color: transparent; }
+  .btn-primary:hover { filter: brightness(1.06); }
+  .btn-danger { border-color: rgba(224,85,111,0.5); color: var(--danger); background:transparent; }
+  .btn-danger:hover { background: rgba(224,85,111,0.1); }
+  .btn-sm { padding:6px 10px; font-size:12px; }
+  .btn:disabled { opacity:0.45; cursor:not-allowed; }
+
+  .link-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .link-box { flex:1; min-width:220px; background:var(--panel-light); border:1px solid var(--border); border-radius:8px; padding:9px 11px; font-family: var(--font-mono); font-size:12px; color: var(--text-dim); word-break:break-all;}
+
+  .qr-box { display:flex; gap:18px; align-items:center; flex-wrap:wrap; }
+  .qr-img { background:#fff; padding:8px; border-radius:10px; width:132px; height:132px; }
+
+  .tier-chip { display:inline-flex; align-items:center; gap:6px; font-size:11px; font-family: var(--font-mono); padding:3px 9px; border-radius:99px; border:1px solid transparent; font-weight:600; white-space:nowrap;}
+  .rank-chip { display:inline-flex; align-items:center; font-size:11px; font-family: var(--font-mono); padding:3px 8px; border-radius:6px; background: var(--panel-light); color:var(--text-dim); border:1px solid var(--border); white-space:nowrap;}
+
+  .dot { width:8px; height:8px; border-radius:50%; display:inline-block; }
+
+  .roster-search { position:relative; }
+  .roster-list { position:absolute; top:calc(100% + 4px); left:0; right:0; max-height:230px; overflow-y:auto; background: var(--panel-light); border:1px solid var(--border); border-radius:10px; z-index:20; box-shadow: 0 10px 30px rgba(0,0,0,0.4); }
+  .roster-item { padding:9px 12px; font-size:13px; display:flex; justify-content:space-between; gap:8px; align-items:center; border-bottom:1px solid var(--border); }
+  .roster-item:last-child { border-bottom:none; }
+  .roster-item:hover { background:#2A3656; cursor:pointer; }
+  .roster-item.taken { opacity:0.4; cursor:not-allowed; }
+
+  .selected-box { display:flex; align-items:center; justify-content:space-between; gap:10px; background: var(--panel-light); border:1px solid var(--gold); border-radius:10px; padding:12px 14px; margin-top:10px;}
+  .confirm-box { text-align:center; padding: 26px 18px; }
+  .confirm-group-badge { font-family: var(--font-display); font-size:34px; color: var(--gold-light); margin: 6px 0 2px; }
+
+  .groups-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:14px; }
+  .group-card { background: var(--panel-light); border:1px solid var(--border); border-radius:12px; padding:14px 16px; }
+  .group-card h4 { margin:0 0 10px; font-family: var(--font-display); font-size:16px; display:flex; justify-content:space-between; align-items:baseline; }
+  .group-card h4 span.count { font-family: var(--font-mono); font-size:12px; color:var(--text-dim); font-weight:400; }
+
+  .balance-bar { display:flex; height:9px; border-radius:5px; overflow:hidden; background:#0C1120; margin-bottom:10px; border:1px solid var(--border); }
+  .balance-seg { height:100%; }
+
+  .member-row { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--border); font-size:13px; }
+  .member-row:last-child { border-bottom:none; }
+  .member-name { flex:1; }
+  .move-select { font-size:11px; padding:3px 6px; }
+
+  .empty-state { text-align:center; padding:30px 20px; color:var(--text-dim); }
+  .empty-state .big { font-family: var(--font-display); font-size:18px; color:var(--text); margin-bottom:6px; }
+
+  .pending-chips { display:flex; flex-wrap:wrap; gap:6px; max-height:120px; overflow-y:auto; padding:4px 2px; }
+  .pending-chip { font-size:11px; padding:4px 9px; border-radius:99px; background:var(--panel-light); border:1px solid var(--border); color:var(--text-dim); }
+
+  .stat-row { display:flex; gap:20px; flex-wrap:wrap; margin-bottom:6px; }
+  .stat { min-width:100px; }
+  .stat .num { font-family: var(--font-mono); font-size:24px; color:var(--gold-light); font-weight:700; }
+  .stat .lbl { font-size:11px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.5px; }
+
+  .hist-item { border-bottom:1px solid var(--border); padding:12px 0; }
+  .hist-item:last-child { border-bottom:none; }
+  .hist-head { display:flex; justify-content:space-between; align-items:center; gap:10px; cursor:pointer; flex-wrap:wrap;}
+  .hist-head:hover .hist-title { color: var(--gold-light); }
+  .hist-title { font-weight:600; }
+  .toast { position:fixed; bottom:18px; left:50%; transform:translateX(-50%); background: var(--panel-light); border:1px solid var(--gold); color:var(--text); padding:10px 18px; border-radius:10px; font-size:13px; z-index:999; box-shadow:0 8px 24px rgba(0,0,0,0.5); }
+  .collapse-toggle { background:none; border:none; color:var(--gold); font-size:12px; font-weight:600; padding:0; }
+  .muted-note { font-size:12px; color:var(--text-dim); line-height:1.5; margin-top:8px; }
+</style>
+
+<script type="text/babel">
+const { useState, useEffect, useMemo, useRef, useCallback } = React;
+
+const TIER_ORDER = ["Base até 5MM", "Impulso 10–20MM", "Trilha 20–50MM", "Topo 50–100MM", "Legado >100MM", "Não classificado"];
+const TIER_COLOR = {
+  "Base até 5MM": "var(--tier-base)",
+  "Impulso 10–20MM": "var(--tier-impulso)",
+  "Trilha 20–50MM": "var(--tier-trilha)",
+  "Topo 50–100MM": "var(--tier-topo)",
+  "Legado >100MM": "var(--tier-legado)",
+  "Não classificado": "var(--tier-nc)",
+};
+
+const DEFAULT_ROSTER = [
+["Tiago Miziara","Ana","3","Legado >100MM"],
+["Daniel Coelho","Ana","3","Legado >100MM"],
+["Elias Coelho","Ana","3","Legado >100MM"],
+["Marcel Balieiro","Ana","3","Legado >100MM"],
+["Pollyana Diniz","Ana","2","Topo 50–100MM"],
+["Daniela Marques","Ana","2","Topo 50–100MM"],
+["Priscila Brum","Ana","2","Topo 50–100MM"],
+["Henrique Barros","Ana","","Não classificado"],
+["Atendimento Digital","Carol","2","Topo 50–100MM"],
+["José Robson","Carol","2","Trilha 20–50MM"],
+["Eugênio Pagotto","Carol","2","Trilha 20–50MM"],
+["Enrico Linhares","Carol","1","Impulso 10–20MM"],
+["Mariana Araújo","Carol","2","Impulso 10–20MM"],
+["Fábio Zarzour","Carol","2","Impulso 10–20MM"],
+["Fernando Claudio","Carol","1","Base até 5MM"],
+["Pablo Árabe","Carol","1","Base até 5MM"],
+["Mariana dos Santos Araujo","Carol","2","Impulso 10–20MM"],
+["Hanna Alves Higino","Carol","1","Base até 5MM"],
+["Thiago Figueiredo Araujo Nascimento","Carol","1","Base até 5MM"],
+["Pedro Kira","Fábio","3","Legado >100MM"],
+["Lucas Gonçalves","Fábio","2","Topo 50–100MM"],
+["Bruno Marques","Fábio","2","Topo 50–100MM"],
+["Gabriel Collazo","Fábio","2","Topo 50–100MM"],
+["Matheus Carrascosa","Fábio","2","Topo 50–100MM"],
+["Vinicius Werdan","Lucas","2","Trilha 20–50MM"],
+["Felipe Holler","Lucas","2","Trilha 20–50MM"],
+["Juan Miranda","Lucas","1","Impulso 10–20MM"],
+["Vinícius Antunes","Lucas","1","Impulso 10–20MM"],
+["Rafael Carvalho","Lucas","1","Impulso 10–20MM"],
+["Pedro Vasconcelos","Lucas","1","Impulso 10–20MM"],
+["Leandro Carvalho","Lucas","1","Base até 5MM"],
+["Guilherme Spinola","Lucas","1","Base até 5MM"],
+["Bruno Guedes","Thiago","1","Base até 5MM"],
+["Franco Frascino","Thiago","1","Base até 5MM"],
+["João Lopes","Thiago","1","Base até 5MM"],
+["Elias Roumanos","Thiago","1","Base até 5MM"],
+["Pedro Mutzig","Walter","3","Legado >100MM"],
+["Bruno Coelho","Walter","3","Legado >100MM"],
+["Rafael Visconti","Walter","3","Topo 50–100MM"],
+["Tom Koch","Walter","3","Topo 50–100MM"],
+["André Bauer","Walter","3","Topo 50–100MM"],
+["Bruna Maier","Walter","3","Topo 50–100MM"],
+["Fernando Presa","Walter","2","Topo 50–100MM"],
+["Lucas Mendes","Walter","2","Impulso 10–20MM"],
+["Flavio Araujo","Walter","2","Topo 50–100MM"],
+].map(([nome,lider,ranking,cluster]) => ({ nome, lider, ranking: ranking || "N/C", cluster: cluster || "Não classificado" }));
+
+const TEMA_OPTIONS = [
+  "Agendamento de R1 (prospecção)",
+  "Agendamento de Reunião de Gestão de Riscos",
+  "Momento de Pedir Indicações",
+  "Follow-up de Propostas em Aberto",
+  "Outro (personalizado)",
+];
+
+function slugify(s){ return s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,""); }
+function nowId(dateStr, tema){ return `${dateStr || 'sem-data'}__${slugify(tema||'tema')}__${Date.now()}`; }
+function groupLetter(i){ return String.fromCharCode(65+i); }
+
+async function createBucket(){
+  const tryOnce = async (body) => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+      const res = await fetch("https://kvdb.io/", { method: "POST", body, signal: controller.signal });
+      clearTimeout(timeout);
+      const text = (await res.text()).trim();
+      if (!res.ok) return { id: null, error: `HTTP ${res.status}: ${text || "sem detalhes"}` };
+      return { id: text || null, error: text ? null : "resposta vazia do servidor" };
+    } catch(e){
+      clearTimeout(timeout);
+      return { id: null, error: (e && e.name === "AbortError") ? "tempo esgotado (sem resposta em 10s)" : `falha de rede (${e && e.message ? e.message : e})` };
+    }
+  };
+  let r1 = await tryOnce(new URLSearchParams({ email: "arena@inves.com.br" }));
+  if (r1.id) return r1;
+  let r2 = await tryOnce(undefined);
+  if (r2.id) return r2;
+  return { id: null, error: `Tentativa 1: ${r1.error} · Tentativa 2: ${r2.error}` };
+}
+async function storageGet(bucket, key){
+  if (!bucket) return null;
+  try {
+    const res = await fetch(`https://kvdb.io/${bucket}/${encodeURIComponent(key)}`);
+    if (res.status === 404) return null;
+    if (!res.ok) return null;
+    return await res.text();
+  } catch(e){ console.error("storage get failed", key, e); return null; }
+}
+async function storageSet(bucket, key, value){
+  if (!bucket) return false;
+  try {
+    const res = await fetch(`https://kvdb.io/${bucket}/${encodeURIComponent(key)}`, { method: "PUT", body: value });
+    return res.ok;
+  } catch(e){ console.error("storage set failed", key, e); return false; }
+}
+
+function Toast({ msg }) {
+  if (!msg) return null;
+  return <div className="toast">{msg}</div>;
+}
+
+function TierChip({ cluster }) {
+  const color = TIER_COLOR[cluster] || "var(--tier-nc)";
+  return <span className="tier-chip" style={{ color, borderColor: color, background: "color-mix(in srgb, " + color + " 14%, transparent)" }}>
+    <span className="dot" style={{ background: color }}></span>{cluster}
+  </span>;
+}
+
+function App(){
+  const [loading, setLoading] = useState(true);
+  const [bucket, setBucket] = useState(null);
+  const [creatingRoom, setCreatingRoom] = useState(false);
+  const [config, setConfig] = useState(null); // {id,date,tema,numGroups,status,createdAt}
+  const [regs, setRegs] = useState([]); // current event registrations
+  const [roster, setRoster] = useState(DEFAULT_ROSTER);
+  const [historico, setHistorico] = useState([]);
+  const [tab, setTab] = useState("inscricao");
+  const [toast, setToast] = useState("");
+
+  const showToast = useCallback((m) => { setToast(m); setTimeout(()=>setToast(""), 2600); }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const b = params.get("sala") || params.get("b");
+    if (b) { setBucket(b); } else { setLoading(false); }
+  }, []);
+
+  const papel = new URLSearchParams(window.location.search).get("papel") || "lider";
+
+  const [roomError, setRoomError] = useState("");
+  const handleCreateRoom = async () => {
+    setCreatingRoom(true);
+    setRoomError("");
+    const result = await createBucket();
+    if (!result.id) {
+      setRoomError(`Detalhe técnico: ${result.error}. Se aparecer algo como "Failed to fetch" ou "rede", tente pelo celular com dados móveis (sem wi-fi). Se for "HTTP 4xx/5xx", me manda essa mensagem que eu ajusto a ferramenta.`);
+      setCreatingRoom(false);
+      return;
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.set("sala", result.id);
+    window.location.href = url.toString();
+  };
+
+  useEffect(() => {
+    if (!bucket) return;
+    (async () => {
+      setLoading(true);
+      const cfg = await storageGet(bucket, "arena:config");
+      const rost = await storageGet(bucket, "arena:roster");
+      const hist = await storageGet(bucket, "arena:historico");
+      let parsedCfg = null, parsedRoster = DEFAULT_ROSTER, parsedHist = [];
+      try { parsedCfg = cfg ? JSON.parse(cfg) : null; } catch(e){}
+      try { parsedRoster = rost ? JSON.parse(rost) : DEFAULT_ROSTER; } catch(e){}
+      try { parsedHist = hist ? JSON.parse(hist) : []; } catch(e){}
+      setConfig(parsedCfg);
+      setRoster(parsedRoster);
+      setHistorico(parsedHist);
+      if (parsedCfg && parsedCfg.id) {
+        const r = await storageGet(bucket, `arena:regs:${parsedCfg.id}`);
+        try { setRegs(r ? JSON.parse(r) : []); } catch(e){ setRegs([]); }
+        setTab(parsedCfg.status === "aberta" ? "inscricao" : "grupos");
+      } else {
+        setTab("configurar");
+      }
+      setLoading(false);
+    })();
+  }, [bucket]);
+
+  const refreshRegs = useCallback(async (id) => {
+    const r = await storageGet(bucket, `arena:regs:${id}`);
+    try { setRegs(r ? JSON.parse(r) : []); } catch(e){ setRegs([]); }
+  }, [bucket]);
+
+  // ---- CONFIG TAB ACTIONS ----
+  const startNewArena = async ({ date, tema, numGroups }) => {
+    if (config && config.status) {
+      const arch = { ...config, regs, archivedAt: Date.now() };
+      const newHist = [arch, ...historico].slice(0, 30);
+      await storageSet(bucket, "arena:historico", JSON.stringify(newHist));
+      setHistorico(newHist);
+    }
+    const id = nowId(date, tema);
+    const newCfg = { id, date, tema, numGroups: Number(numGroups) || 4, status: "aberta", createdAt: Date.now() };
+    await storageSet(bucket, "arena:config", JSON.stringify(newCfg));
+    await storageSet(bucket, `arena:regs:${id}`, JSON.stringify([]));
+    setConfig(newCfg);
+    setRegs([]);
+    showToast("Novo Arena Invés criado e inscrições abertas.");
+    setTab("inscricao");
+  };
+
+  const toggleStatus = async () => {
+    if (!config) return;
+    const newCfg = { ...config, status: config.status === "aberta" ? "encerrada" : "aberta" };
+    await storageSet(bucket, "arena:config", JSON.stringify(newCfg));
+    setConfig(newCfg);
+    showToast(newCfg.status === "aberta" ? "Inscrições reabertas." : "Inscrições encerradas.");
+  };
+
+  const updateNumGroups = async (n) => {
+    if (!config) return;
+    const newCfg = { ...config, numGroups: Number(n) };
+    await storageSet(bucket, "arena:config", JSON.stringify(newCfg));
+    setConfig(newCfg);
+  };
+
+  const saveRoster = async (list) => {
+    await storageSet(bucket, "arena:roster", JSON.stringify(list));
+    setRoster(list);
+    showToast("Roster de assessores atualizado.");
+  };
+
+  // ---- ASSIGNMENT ALGORITHM ----
+  const assignGroup = (currentRegs, numGroups, cluster) => {
+    const counts = Array.from({ length: numGroups }, (_, i) => ({ group: i, sameTier: 0, total: 0 }));
+    currentRegs.forEach(r => {
+      if (r.grupo >= 0 && r.grupo < numGroups) {
+        counts[r.grupo].total += 1;
+        if (r.cluster === cluster) counts[r.grupo].sameTier += 1;
+      }
+    });
+    counts.sort((a, b) => (a.sameTier - b.sameTier) || (a.total - b.total) || (Math.random() - 0.5));
+    return counts[0].group;
+  };
+
+  const register = async (rosterEntry) => {
+    if (!config || config.status !== "aberta") { showToast("As inscrições não estão abertas."); return null; }
+    const fresh = await storageGet(bucket, `arena:regs:${config.id}`);
+    let list = [];
+    try { list = fresh ? JSON.parse(fresh) : []; } catch(e){ list = []; }
+    const already = list.find(r => r.nome === rosterEntry.nome);
+    if (already) { setRegs(list); return already; }
+    const grupo = assignGroup(list, config.numGroups, rosterEntry.cluster);
+    const entry = { nome: rosterEntry.nome, lider: rosterEntry.lider, ranking: rosterEntry.ranking, cluster: rosterEntry.cluster, grupo, ts: Date.now(), reunioes: 0 };
+    const newList = [...list, entry];
+    await storageSet(bucket, `arena:regs:${config.id}`, JSON.stringify(newList));
+    setRegs(newList);
+    return entry;
+  };
+
+  const moveMember = async (nome, newGroup) => {
+    const newList = regs.map(r => r.nome === nome ? { ...r, grupo: Number(newGroup) } : r);
+    await storageSet(bucket, `arena:regs:${config.id}`, JSON.stringify(newList));
+    setRegs(newList);
+    showToast(`${nome} movido para o Grupo ${groupLetter(Number(newGroup))}.`);
+  };
+
+  const logMeeting = async (nome, delta) => {
+    const fresh = await storageGet(bucket, `arena:regs:${config.id}`);
+    let list = [];
+    try { list = fresh ? JSON.parse(fresh) : []; } catch(e){ list = regs; }
+    const newList = list.map(r => r.nome === nome ? { ...r, reunioes: Math.max(0, (r.reunioes || 0) + delta) } : r);
+    await storageSet(bucket, `arena:regs:${config.id}`, JSON.stringify(newList));
+    setRegs(newList);
+  };
+
+  const shareUrl = (typeof window !== "undefined" && window.location) ? window.location.href : "";
+
+  if (!bucket) {
+    return (
+      <div className="arena-wrap">
+        <div className="arena-header">
+          <div>
+            <h1 className="arena-title"><b>Arena</b> Invés</h1>
+            <div className="arena-sub">Governança de mobilização · Assessores SP &amp; BH</div>
+          </div>
+        </div>
+        <div className="card empty-state">
+          <div className="big">Primeiro acesso — crie a sala do Arena Invés</div>
+          <p className="muted-note">Isso cria um espaço de armazenamento compartilhado (gratuito, sem cadastro) onde ficam as inscrições, os grupos e o placar. Faça isso <b>uma única vez</b>; depois disso, use sempre o mesmo link para tudo — configurar, se inscrever e acompanhar o placar.</p>
+          <div style={{ marginTop: 16 }}>
+            <button className="btn btn-primary" disabled={creatingRoom} onClick={handleCreateRoom}>{creatingRoom ? "Criando sala…" : (roomError ? "Tentar novamente" : "Criar sala do Arena Invés")}</button>
+          </div>
+          {roomError && (
+            <div className="card" style={{ marginTop: 14, borderColor: "var(--danger)", background: "rgba(224,85,111,0.08)", textAlign: "left" }}>
+              <b style={{ color: "var(--danger)" }}>Não deu certo</b>
+              <p className="muted-note" style={{ marginTop: 6 }}>{roomError}</p>
+            </div>
+          )}
+        </div>
+        <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v7</div>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return <div className="arena-wrap"><div className="empty-state"><div className="big">Carregando Arena Invés…</div></div></div>;
+  }
+
+  if (papel === "assessor") {
+    return (
+      <div className="arena-wrap">
+        <div className="arena-header">
+          <div>
+            <h1 className="arena-title"><b>Arena</b> Invés</h1>
+            <div className="arena-sub">Assessores SP &amp; BH</div>
+          </div>
+          {config ? (
+            <span className={"arena-status-pill " + (config.status === "aberta" ? "status-aberta" : "status-encerrada")}>
+              {config.status === "aberta" ? "Inscrições abertas" : "Inscrições encerradas"}
+            </span>
+          ) : <span className="arena-status-pill status-none">Nenhum arena ativo</span>}
+        </div>
+        <AssessorView config={config} regs={regs} roster={roster} onRegister={register} onLogMeeting={logMeeting} />
+        <Toast msg={toast} />
+        <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v7</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="arena-wrap">
+      <div className="arena-header">
+        <div>
+          <h1 className="arena-title"><b>Arena</b> Invés</h1>
+          <div className="arena-sub">Governança de mobilização · Assessores SP &amp; BH</div>
+        </div>
+        {config ? (
+          <span className={"arena-status-pill " + (config.status === "aberta" ? "status-aberta" : "status-encerrada")}>
+            {config.status === "aberta" ? "Inscrições abertas" : "Inscrições encerradas"}
+          </span>
+        ) : <span className="arena-status-pill status-none">Nenhum arena ativo</span>}
+      </div>
+
+      <div className="arena-tabs">
+        <button className={"arena-tab " + (tab==="configurar"?"active":"")} onClick={()=>setTab("configurar")}>Configurar</button>
+        <button className={"arena-tab " + (tab==="inscricao"?"active":"")} onClick={()=>setTab("inscricao")}>Inscrição</button>
+        <button className={"arena-tab " + (tab==="grupos"?"active":"")} onClick={()=>setTab("grupos")}>Grupos</button>
+        <button className={"arena-tab " + (tab==="placar"?"active":"")} onClick={()=>setTab("placar")}>Placar ao vivo</button>
+        <button className={"arena-tab " + (tab==="historico"?"active":"")} onClick={()=>setTab("historico")}>Histórico</button>
+      </div>
+
+      {tab === "configurar" && (
+        <ConfigTab config={config} roster={roster} shareUrl={shareUrl}
+          onStart={startNewArena} onToggleStatus={toggleStatus} onUpdateNumGroups={updateNumGroups}
+          onSaveRoster={saveRoster} showToast={showToast} />
+      )}
+
+      {tab === "inscricao" && (
+        <InscricaoTab config={config} roster={roster} regs={regs} onRegister={register} onLogMeeting={logMeeting} />
+      )}
+
+      {tab === "grupos" && (
+        <GruposTab config={config} roster={roster} regs={regs} onMove={moveMember} onLogMeeting={logMeeting} />
+      )}
+
+      {tab === "placar" && (
+        <PlacarTab config={config} regs={regs} />
+      )}
+
+      {tab === "historico" && (
+        <HistoricoTab historico={historico} />
+      )}
+
+      <Toast msg={toast} />
+      <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v7</div>
+    </div>
+  );
+}
+
+function ConfigTab({ config, roster, shareUrl, onStart, onToggleStatus, onUpdateNumGroups, onSaveRoster, showToast }) {
+  const [date, setDate] = useState(config?.date || "");
+  const [temaSel, setTemaSel] = useState(TEMA_OPTIONS[0]);
+  const [temaCustom, setTemaCustom] = useState("");
+  const [numGroups, setNumGroups] = useState(config?.numGroups || 4);
+  const [rosterOpen, setRosterOpen] = useState(false);
+  const [rosterText, setRosterText] = useState(
+    roster.map(r => `${r.nome};${r.lider};${r.ranking};${r.cluster}`).join("\n")
+  );
+
+  const tema = temaSel === "Outro (personalizado)" ? temaCustom : temaSel;
+
+  const handleStart = () => {
+    if (!date || !tema) { showToast("Preencha data e tema antes de iniciar."); return; }
+    onStart({ date, tema, numGroups });
+  };
+
+  const copyLink = async (url) => {
+    try { await navigator.clipboard.writeText(url); showToast("Link copiado."); }
+    catch(e){ showToast("Não foi possível copiar automaticamente — selecione o link manualmente."); }
+  };
+
+  const baseUrl = (() => { try { const u = new URL(shareUrl); u.searchParams.delete("papel"); return u; } catch(e){ return null; } })();
+  const liderLink = baseUrl ? baseUrl.toString() : shareUrl;
+  const assessorLink = (() => { if (!baseUrl) return shareUrl; const u = new URL(baseUrl); u.searchParams.set("papel", "assessor"); return u.toString(); })();
+
+  const applyRoster = () => {
+    const lines = rosterText.split("\n").map(l => l.trim()).filter(Boolean);
+    const parsed = lines.map(l => {
+      const [nome, lider, ranking, cluster] = l.split(";").map(s => (s || "").trim());
+      return { nome, lider: lider || "—", ranking: ranking || "N/C", cluster: cluster || "Não classificado" };
+    }).filter(r => r.nome);
+    onSaveRoster(parsed);
+  };
+
+  return (
+    <div>
+      <div className="card">
+        <h3><span className="eyebrow">Passo 1</span>{config ? "Ajustar arena atual ou iniciar um novo" : "Iniciar novo Arena Invés"}</h3>
+        <div className="field-row">
+          <div className="field">
+            <label>Data do Arena</label>
+            <input type="date" value={date} onChange={e=>setDate(e.target.value)} />
+          </div>
+          <div className="field" style={{ flex: 2 }}>
+            <label>Tema / objetivo do dia</label>
+            <select value={temaSel} onChange={e=>setTemaSel(e.target.value)}>
+              {TEMA_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          {temaSel === "Outro (personalizado)" && (
+            <div className="field">
+              <label>Descreva o tema</label>
+              <input value={temaCustom} onChange={e=>setTemaCustom(e.target.value)} placeholder="Ex: Revisão de carteira" />
+            </div>
+          )}
+          <div className="field" style={{ maxWidth: 140 }}>
+            <label>Nº de grupos</label>
+            <input type="number" min="2" max="10" value={numGroups} onChange={e=>setNumGroups(e.target.value)} />
+          </div>
+        </div>
+        <button className="btn btn-primary" onClick={handleStart}>
+          {config ? "Encerrar atual e iniciar novo Arena" : "Iniciar Arena e abrir inscrições"}
+        </button>
+        {config && <p className="muted-note">Iniciar um novo Arena arquiva automaticamente o atual (com os grupos formados) na aba Histórico — nada se perde.</p>}
+      </div>
+
+      {config && (
+        <div className="card">
+          <h3><span className="eyebrow">Arena ativo</span>{config.tema}</h3>
+          <div className="field-row" style={{ alignItems: "center" }}>
+            <div className="field"><label>Data</label><div>{config.date}</div></div>
+            <div className="field"><label>Grupos formados hoje</label>
+              <input type="number" min="2" max="10" value={config.numGroups} onChange={e=>onUpdateNumGroups(e.target.value)} />
+            </div>
+            <div className="field">
+              <label>Status</label>
+              <button className="btn btn-sm" onClick={onToggleStatus}>
+                {config.status === "aberta" ? "Encerrar inscrições" : "Reabrir inscrições"}
+              </button>
+            </div>
+          </div>
+          <p className="muted-note">Alterar o nº de grupos rebalanceia apenas as próximas inscrições — os já inscritos permanecem no grupo atual (ajuste manual disponível na aba Grupos).</p>
+        </div>
+      )}
+
+      <div className="card">
+        <h3><span className="eyebrow">Passo 2</span>Link para os assessores (projete este QR)</h3>
+        <div className="qr-box">
+          <img className="qr-img" alt="QR code de inscrição dos assessores" src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(assessorLink)}`} />
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <div className="link-row">
+              <div className="link-box">{assessorLink}</div>
+              <button className="btn btn-sm" onClick={()=>copyLink(assessorLink)}>Copiar link</button>
+            </div>
+            <p className="muted-note">Esse é o link/QR que vai para o telão e para o grupo do WhatsApp. Ele abre a tela simplificada: escolher nome → ver o time → lançar reuniões agendadas → acompanhar o placar. Nada de configuração aparece aqui.</p>
+          </div>
+        </div>
+        <p className="muted-note"><b>Este link já funciona para qualquer pessoa</b>, sem precisar de conta — os dados ficam salvos na nuvem (KVdb). Hospede este arquivo HTML em algum lugar com link público (ex: GitHub Pages) e use exatamente essa URL no QR code.</p>
+      </div>
+
+      <div className="card">
+        <h3><span className="eyebrow">Link de administração</span>Só para você e os líderes</h3>
+        <div className="link-row">
+          <div className="link-box">{liderLink}</div>
+          <button className="btn btn-sm" onClick={()=>copyLink(liderLink)}>Copiar link</button>
+        </div>
+        <p className="muted-note">Guarde este link separado — é o que abre todas as abas (Configurar, Grupos, Placar, Histórico). Não precisa de QR code nem de ser divulgado para os assessores.</p>
+      </div>
+
+      <div className="card">
+        <h3><span className="eyebrow">Manutenção</span>Roster de assessores</h3>
+        <button className="collapse-toggle" onClick={()=>setRosterOpen(!rosterOpen)}>
+          {rosterOpen ? "▾ Ocultar edição do roster" : "▸ Editar lista de assessores, líder, ranking e cluster"}
+        </button>
+        {rosterOpen && (
+          <div style={{ marginTop: 12 }}>
+            <p className="muted-note" style={{ marginTop: 0 }}>Formato por linha: <code>Nome;Líder;Ranking;Cluster</code>. Use isso quando alguém entrar, sair ou mudar de cluster.</p>
+            <textarea rows={10} style={{ width: "100%", fontFamily: "var(--font-mono)", fontSize: 12 }} value={rosterText} onChange={e=>setRosterText(e.target.value)} />
+            <div style={{ marginTop: 10 }}>
+              <button className="btn btn-primary" onClick={applyRoster}>Salvar roster</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ArpiumBanner() {
+  return (
+    <div className="card" style={{ borderColor: "var(--gold)", background: "rgba(52,246,52,0.06)" }}>
+      <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+        <span style={{ fontSize: 18 }}>⚠️</span>
+        <div>
+          <b>Não esqueça de cadastrar o lead na Arpium.</b>
+          <div className="muted-note" style={{ marginTop: 4 }}>O placar aqui é só para acompanhar em tempo real. A pontuação e o vencedor oficial só são validados pelo que estiver cadastrado na Arpium — reunião marcada aqui e não lançada lá não conta.</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MeetingCounter({ entry, onLogMeeting }) {
+  return (
+    <div className="selected-box" style={{ borderColor: "var(--border)", marginTop: 14 }}>
+      <div>
+        <div className="muted-note" style={{ marginTop: 0, marginBottom: 2 }}>Reuniões agendadas nesta Arena</div>
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: 30, color: "var(--gold-light)", fontWeight: 700 }}>{entry.reunioes || 0}</div>
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button className="btn btn-sm" onClick={() => onLogMeeting(entry.nome, -1)}>-1</button>
+        <button className="btn btn-primary btn-sm" onClick={() => onLogMeeting(entry.nome, 1)}>+1 reunião agendada</button>
+      </div>
+    </div>
+  );
+}
+
+function AssessorView({ config, regs, roster, onRegister, onLogMeeting }) {
+  const [selectedName, setSelectedName] = useState("");
+  const sortedRoster = useMemo(() => [...roster].sort((a, b) => a.nome.localeCompare(b.nome)), [roster]);
+  const selected = roster.find(r => r.nome === selectedName) || null;
+  const existingReg = selected ? regs.find(r => r.nome === selected.nome) : null;
+
+  if (!config) {
+    return <div className="card"><div className="empty-state"><div className="big">Nenhum Arena Invés aberto no momento</div>Peça para o líder configurar o Arena de hoje.</div></div>;
+  }
+
+  const doConfirm = async () => { if (!selected) return; await onRegister(selected); };
+
+  return (
+    <div>
+      <div className="card">
+        <h3><span className="eyebrow">Passo 1</span>Selecione seu nome</h3>
+        <select value={selectedName} onChange={e => setSelectedName(e.target.value)} style={{ width: "100%" }}>
+          <option value="">— Escolha seu nome —</option>
+          {sortedRoster.map(r => <option key={r.nome} value={r.nome}>{r.nome}</option>)}
+        </select>
+      </div>
+
+      {selected && (
+        <div className="card">
+          <h3><span className="eyebrow">Passo 2</span>Seu time</h3>
+          <div className="selected-box">
+            <div>
+              <div style={{ fontWeight: 700 }}>{selected.nome}</div>
+              <div style={{ fontSize: 12, color: "var(--text-dim)" }}>Time do(a) {selected.lider} · Ranking {selected.ranking}</div>
+            </div>
+            <TierChip cluster={selected.cluster} />
+          </div>
+
+          {!existingReg && config.status === "aberta" && (
+            <div style={{ marginTop: 14 }}>
+              <button className="btn btn-primary" onClick={doConfirm}>Confirmar minha presença</button>
+            </div>
+          )}
+          {!existingReg && config.status !== "aberta" && (
+            <p className="muted-note">As inscrições deste Arena estão encerradas no momento.</p>
+          )}
+
+          {existingReg && (
+            <>
+              <div className="confirm-group-badge" style={{ textAlign: "center" }}>Grupo {groupLetter(existingReg.grupo)}</div>
+              <h3 style={{ marginTop: 18 }}><span className="eyebrow">Passo 3</span>Reuniões agendadas</h3>
+              <MeetingCounter entry={existingReg} onLogMeeting={onLogMeeting} />
+              <ArpiumBanner />
+            </>
+          )}
+        </div>
+      )}
+
+      {selected && existingReg && (
+        <>
+          <div className="card" style={{ paddingBottom: 6 }}>
+            <h3 style={{ marginBottom: 0 }}><span className="eyebrow">Passo 4</span>Acompanhe o placar ao vivo</h3>
+          </div>
+          <PlacarTab config={config} regs={regs} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function InscricaoTab({ config, roster, regs, onRegister, onLogMeeting }) {
+  const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState(null);
+  const [open, setOpen] = useState(false);
+  const [justConfirmed, setJustConfirmed] = useState(false);
+
+  const registeredNames = useMemo(() => new Set(regs.map(r => r.nome)), [regs]);
+
+  const filtered = useMemo(() => {
+    if (!query.trim()) return roster.slice(0, 8);
+    const q = query.toLowerCase();
+    return roster.filter(r => r.nome.toLowerCase().includes(q)).slice(0, 20);
+  }, [query, roster]);
+
+  if (!config) {
+    return <div className="card"><div className="empty-state"><div className="big">Nenhum Arena Invés aberto</div>Peça para um líder configurar a data e o tema na aba Configurar.</div></div>;
+  }
+
+  const existingReg = selected ? regs.find(r => r.nome === selected.nome) : null;
+
+  const doConfirm = async () => {
+    if (!selected) return;
+    await onRegister(selected);
+    setJustConfirmed(true);
+  };
+
+  if (existingReg) {
+    const groupmates = regs.filter(r => r.grupo === existingReg.grupo && r.nome !== existingReg.nome);
+    return (
+      <div>
+        <div className="card confirm-box">
+          <div style={{ fontSize: 13, color: "var(--text-dim)" }}>{config.tema} · {config.date}</div>
+          <div style={{ marginTop: 10 }}>{justConfirmed ? "Presença confirmada, " : "Bem-vindo(a) de volta, "}<b>{existingReg.nome}</b>.</div>
+          <div className="confirm-group-badge">Grupo {groupLetter(existingReg.grupo)}</div>
+          <TierChip cluster={existingReg.cluster} />
+          <MeetingCounter entry={existingReg} onLogMeeting={onLogMeeting} />
+          {groupmates.length > 0 && (
+            <div style={{ marginTop: 18, textAlign: "left", maxWidth: 360, marginLeft: "auto", marginRight: "auto" }}>
+              <div className="muted-note" style={{ marginTop: 0, marginBottom: 6 }}>Colegas no seu grupo:</div>
+              {groupmates.map(m => (
+                <div key={m.nome} className="member-row"><span className="member-name">{m.nome}</span><TierChip cluster={m.cluster} /></div>
+              ))}
+            </div>
+          )}
+          <div style={{ marginTop: 18 }}>
+            <button className="btn btn-sm" onClick={() => { setSelected(null); setQuery(""); setJustConfirmed(false); }}>Buscar outro nome neste aparelho</button>
+          </div>
+        </div>
+        <ArpiumBanner />
+      </div>
+    );
+  }
+
+  if (config.status !== "aberta") {
+    return <div className="card"><div className="empty-state"><div className="big">Inscrições encerradas</div>O Arena de {config.date} ({config.tema}) não está mais recebendo novas inscrições. Veja os grupos na aba Grupos.</div></div>;
+  }
+
+  return (
+    <div>
+      <div className="card">
+        <h3><span className="eyebrow">{config.date}</span>{config.tema}</h3>
+        <div className="field roster-search">
+          <label>Encontre seu nome</label>
+          <input placeholder="Digite seu nome…" value={query}
+            onChange={e => { setQuery(e.target.value); setOpen(true); setSelected(null); }}
+            onFocus={() => setOpen(true)} />
+          {open && (
+            <div className="roster-list">
+              {filtered.length === 0 && <div className="roster-item">Nenhum assessor encontrado.</div>}
+              {filtered.map(r => {
+                const taken = registeredNames.has(r.nome);
+                return (
+                  <div key={r.nome} className={"roster-item" + (taken ? " taken" : "")}
+                    onClick={() => { setSelected(r); setQuery(r.nome); setOpen(false); }}>
+                    <span>{r.nome} <span style={{ color: "var(--text-dim)", fontSize: 12 }}>· {r.lider}</span></span>
+                    {taken ? <span className="rank-chip">já inscrito</span> : <TierChip cluster={r.cluster} />}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {selected && (
+          <div className="selected-box">
+            <div>
+              <div style={{ fontWeight: 700 }}>{selected.nome}</div>
+              <div style={{ fontSize: 12, color: "var(--text-dim)" }}>Time do(a) {selected.lider} · Ranking {selected.ranking}</div>
+            </div>
+            <TierChip cluster={selected.cluster} />
+          </div>
+        )}
+
+        <div style={{ marginTop: 16 }}>
+          <button className="btn btn-primary" disabled={!selected} onClick={doConfirm}>Confirmar minha presença</button>
+        </div>
+        <p className="muted-note">Seu ranking e cluster vêm da base oficial de metas — não é preciso informar nada, o sistema já sabe seu nível e equilibra os grupos automaticamente.</p>
+      </div>
+    </div>
+  );
+}
+
+function GruposTab({ config, roster, regs, onMove, onLogMeeting }) {
+  if (!config) {
+    return <div className="card"><div className="empty-state"><div className="big">Nenhum Arena Invés configurado ainda</div></div></div>;
+  }
+
+  const numGroups = config.numGroups;
+  const groups = Array.from({ length: numGroups }, (_, i) => regs.filter(r => r.grupo === i));
+  const pending = roster.filter(r => !regs.find(x => x.nome === r.nome));
+
+  return (
+    <div>
+      <div className="card">
+        <h3><span className="eyebrow">{config.date} · {config.tema}</span>Visão geral</h3>
+        <div className="stat-row">
+          <div className="stat"><div className="num">{regs.length}</div><div className="lbl">Inscritos</div></div>
+          <div className="stat"><div className="num">{roster.length}</div><div className="lbl">Time total</div></div>
+          <div className="stat"><div className="num">{numGroups}</div><div className="lbl">Grupos</div></div>
+          <div className="stat"><div className="num">{roster.length ? Math.round((regs.length / roster.length) * 100) : 0}%</div><div className="lbl">Cobertura</div></div>
+        </div>
+        {pending.length > 0 && (
+          <div style={{ marginTop: 10 }}>
+            <div className="muted-note" style={{ marginTop: 0, marginBottom: 6 }}>Ainda não confirmaram ({pending.length}):</div>
+            <div className="pending-chips">
+              {pending.map(p => <span key={p.nome} className="pending-chip">{p.nome}</span>)}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="groups-grid">
+        {groups.map((members, i) => (
+          <GroupCard key={i} idx={i} members={members} numGroups={numGroups} onMove={onMove} onLogMeeting={onLogMeeting} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function GroupCard({ idx, members, numGroups, onMove, onLogMeeting }) {
+  const total = members.length || 1;
+  const counts = {};
+  TIER_ORDER.forEach(t => counts[t] = 0);
+  members.forEach(m => { counts[m.cluster] = (counts[m.cluster] || 0) + 1; });
+  const totalReunioes = members.reduce((s, m) => s + (m.reunioes || 0), 0);
+
+  return (
+    <div className="group-card">
+      <h4>Grupo {groupLetter(idx)} <span className="count">{members.length} pessoa{members.length !== 1 ? "s" : ""} · {totalReunioes} reunião{totalReunioes !== 1 ? "ões" : ""}</span></h4>
+      <div className="balance-bar">
+        {TIER_ORDER.map(t => counts[t] > 0 && (
+          <div key={t} className="balance-seg" style={{ width: `${(counts[t] / total) * 100}%`, background: TIER_COLOR[t] }} title={`${t}: ${counts[t]}`}></div>
+        ))}
+      </div>
+      {members.length === 0 && <div className="muted-note" style={{ marginTop: 0 }}>Ainda sem membros.</div>}
+      {members.sort((a,b)=> a.nome.localeCompare(b.nome)).map(m => (
+        <div key={m.nome} className="member-row">
+          <span className="member-name">{m.nome}</span>
+          <TierChip cluster={m.cluster} />
+          <span className="rank-chip" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <button className="btn btn-sm" style={{ padding: "1px 6px" }} onClick={() => onLogMeeting(m.nome, -1)}>-</button>
+            {m.reunioes || 0}
+            <button className="btn btn-sm" style={{ padding: "1px 6px" }} onClick={() => onLogMeeting(m.nome, 1)}>+</button>
+          </span>
+          <select className="move-select" value={idx} onChange={e => onMove(m.nome, e.target.value)}>
+            {Array.from({ length: numGroups }, (_, gi) => <option key={gi} value={gi}>{groupLetter(gi)}</option>)}
+          </select>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PlacarTab({ config, regs }) {
+  if (!config) {
+    return <div className="card"><div className="empty-state"><div className="big">Nenhum Arena Invés configurado ainda</div></div></div>;
+  }
+  const numGroups = config.numGroups;
+  const standings = Array.from({ length: numGroups }, (_, i) => {
+    const members = regs.filter(r => r.grupo === i);
+    const total = members.reduce((s, m) => s + (m.reunioes || 0), 0);
+    return { idx: i, members, total };
+  }).sort((a, b) => b.total - a.total);
+
+  const medalStyle = (pos) => {
+    if (pos === 0) return { borderColor: "var(--gold)", background: "rgba(52,246,52,0.08)" };
+    if (pos === 1) return { borderColor: "#C7CCD8", background: "rgba(199,204,216,0.06)" };
+    if (pos === 2) return { borderColor: "var(--tier-base)", background: "rgba(169,116,79,0.08)" };
+    return {};
+  };
+  const posLabel = (pos) => pos === 0 ? "1º" : pos === 1 ? "2º" : pos === 2 ? "3º" : `${pos + 1}º`;
+
+  return (
+    <div>
+      <div className="card">
+        <h3><span className="eyebrow">{config.date} · {config.tema}</span>Ranking de grupos — reuniões agendadas</h3>
+        <p className="muted-note" style={{ marginTop: 0 }}>Atualiza em tempo real conforme os assessores lançam suas reuniões agendadas. Este placar é para acompanhamento — o resultado oficial é validado na Arpium.</p>
+      </div>
+      {standings.map((s, pos) => (
+        <div key={s.idx} className="card" style={{ ...medalStyle(pos), display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            <div style={{ fontFamily: "var(--font-display)", fontSize: 26, minWidth: 46, color: pos === 0 ? "var(--gold-light)" : "var(--text)" }}>{posLabel(pos)}</div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 16 }}>Grupo {groupLetter(s.idx)}</div>
+              <div className="muted-note" style={{ marginTop: 2 }}>{s.members.length} assessor{s.members.length !== 1 ? "es" : ""}</div>
+            </div>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: 30, fontWeight: 700, color: pos === 0 ? "var(--gold-light)" : "var(--text)" }}>{s.total}</div>
+            <div className="muted-note" style={{ marginTop: 0 }}>reunião{s.total !== 1 ? "ões" : ""} agendada{s.total !== 1 ? "s" : ""}</div>
+          </div>
+        </div>
+      ))}
+      <ArpiumBanner />
+    </div>
+  );
+}
+
+function HistoricoTab({ historico }) {
+  const [openIdx, setOpenIdx] = useState(null);
+  if (!historico || historico.length === 0) {
+    return <div className="card"><div className="empty-state"><div className="big">Nenhum Arena arquivado ainda</div>Quando um novo Arena for iniciado, o anterior aparece aqui automaticamente.</div></div>;
+  }
+  return (
+    <div className="card">
+      <h3><span className="eyebrow">Governança</span>Arenas anteriores</h3>
+      {historico.map((h, i) => {
+        const groups = Array.from({ length: h.numGroups }, (_, gi) => (h.regs || []).filter(r => r.grupo === gi));
+        return (
+          <div key={h.id} className="hist-item">
+            <div className="hist-head" onClick={() => setOpenIdx(openIdx === i ? null : i)}>
+              <div><span className="hist-title">{h.tema}</span> <span style={{ color: "var(--text-dim)", fontSize: 12 }}>· {h.date}</span></div>
+              <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{(h.regs || []).length} inscritos · {h.numGroups} grupos {openIdx === i ? "▾" : "▸"}</div>
+            </div>
+            {openIdx === i && (
+              <div className="groups-grid" style={{ marginTop: 12 }}>
+                {groups.map((members, gi) => (
+                  <div key={gi} className="group-card">
+                    <h4>Grupo {groupLetter(gi)} <span className="count">{members.length}</span></h4>
+                    {members.map(m => (
+                      <div key={m.nome} className="member-row"><span className="member-name">{m.nome}</span><TierChip cluster={m.cluster} /></div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("arena-root")).render(<App />);
+</script>
