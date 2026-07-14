@@ -215,19 +215,19 @@ async function createBucket(){
     try {
       const res = await fetch("https://kvdb.io/", { method: "POST", body, signal: controller.signal });
       clearTimeout(timeout);
-      if (!res.ok) return null;
-      const id = (await res.text()).trim();
-      return id || null;
+      const text = (await res.text()).trim();
+      if (!res.ok) return { id: null, error: `HTTP ${res.status}: ${text || "sem detalhes"}` };
+      return { id: text || null, error: text ? null : "resposta vazia do servidor" };
     } catch(e){
       clearTimeout(timeout);
-      console.error("createBucket attempt failed", e);
-      return null;
+      return { id: null, error: (e && e.name === "AbortError") ? "tempo esgotado (sem resposta em 10s)" : `falha de rede (${e && e.message ? e.message : e})` };
     }
   };
-  // Tenta primeiro sem corpo (bucket anônimo), depois com e-mail como alternativa.
-  let id = await tryOnce(undefined);
-  if (!id) id = await tryOnce("email=arena@inves.com.br");
-  return id;
+  let r1 = await tryOnce(new URLSearchParams({ email: "arena@inves.com.br" }));
+  if (r1.id) return r1;
+  let r2 = await tryOnce(undefined);
+  if (r2.id) return r2;
+  return { id: null, error: `Tentativa 1: ${r1.error} · Tentativa 2: ${r2.error}` };
 }
 async function storageGet(bucket, key){
   if (!bucket) return null;
@@ -281,14 +281,14 @@ function App(){
   const handleCreateRoom = async () => {
     setCreatingRoom(true);
     setRoomError("");
-    const id = await createBucket();
-    if (!id) {
-      setRoomError("Não foi possível criar a sala agora. Pode ser uma instabilidade momentânea — clique em \"Tentar novamente\" abaixo. Se continuar falhando, pode ser que o site https://kvdb.io esteja bloqueado na sua rede (tente pelo celular com os dados móveis, sem wi-fi, para testar).");
+    const result = await createBucket();
+    if (!result.id) {
+      setRoomError(`Detalhe técnico: ${result.error}. Se aparecer algo como "Failed to fetch" ou "rede", tente pelo celular com dados móveis (sem wi-fi). Se for "HTTP 4xx/5xx", me manda essa mensagem que eu ajusto a ferramenta.`);
       setCreatingRoom(false);
       return;
     }
     const url = new URL(window.location.href);
-    url.searchParams.set("sala", id);
+    url.searchParams.set("sala", result.id);
     window.location.href = url.toString();
   };
 
