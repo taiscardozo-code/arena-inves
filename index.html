@@ -208,63 +208,53 @@ function slugify(s){ return s.toLowerCase().normalize("NFD").replace(/[\u0300-\u
 function nowId(dateStr, tema){ return `${dateStr || 'sem-data'}__${slugify(tema||'tema')}__${Date.now()}`; }
 function groupLetter(i){ return String.fromCharCode(65+i); }
 
-async function jbCreate(initialData){
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
+const FIREBASE_URL = "https://arena-inves-default-rtdb.firebaseio.com";
+
+async function fbGet(path){
   try {
-    const res = await fetch("https://jsonblob.com/api/jsonBlob", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Accept": "application/json" },
-      body: JSON.stringify(initialData),
-      signal: controller.signal
-    });
-    clearTimeout(timeout);
-    if (!res.ok) return { id: null, error: `HTTP ${res.status}` };
-    const location = res.headers.get("Location") || res.headers.get("location") || "";
-    const id = location ? location.split("/").filter(Boolean).pop() : null;
-    return { id, error: id ? null : "resposta sem identificador da sala" };
-  } catch(e){
-    clearTimeout(timeout);
-    return { id: null, error: (e && e.name === "AbortError") ? "tempo esgotado (sem resposta em 10s)" : `falha de rede (${e && e.message ? e.message : e})` };
-  }
+    const res = await fetch(`${FIREBASE_URL}/${path}.json`);
+    if (!res.ok) return { data: null, error: `HTTP ${res.status}` };
+    const data = await res.json();
+    return { data, error: null };
+  } catch(e){ return { data: null, error: `falha de rede: ${e && e.message ? e.message : e}` }; }
 }
-async function jbRead(blobId){
+async function fbGetWithEtag(path){
   try {
-    const res = await fetch(`https://jsonblob.com/api/jsonBlob/${blobId}`, { headers: { "Accept": "application/json" } });
+    const res = await fetch(`${FIREBASE_URL}/${path}.json`, { headers: { "X-Firebase-ETag": "true" } });
     if (!res.ok) return { data: null, etag: null, error: `HTTP ${res.status}` };
     const etag = res.headers.get("ETag") || res.headers.get("etag") || "";
     const data = await res.json();
     return { data, etag, error: null };
   } catch(e){ return { data: null, etag: null, error: `falha de rede: ${e && e.message ? e.message : e}` }; }
 }
-async function jbWriteRaw(blobId, data, etag){
+async function fbPut(path, value, etag){
   try {
-    const headers = { "Content-Type": "application/json", "Accept": "application/json" };
+    const headers = { "Content-Type": "application/json" };
     if (etag) headers["If-Match"] = etag;
-    const res = await fetch(`https://jsonblob.com/api/jsonBlob/${blobId}`, { method: "PUT", headers, body: JSON.stringify(data) });
-    return { ok: res.ok, status: res.status };
-  } catch(e){ return { ok: false, status: 0, error: e && e.message ? e.message : String(e) }; }
+    const res = await fetch(`${FIREBASE_URL}/${path}.json`, { method: "PUT", headers, body: JSON.stringify(value === undefined ? null : value) });
+    if (res.ok) return { ok: true };
+    const text = await res.text().catch(()=> "");
+    return { ok: false, status: res.status, detail: `HTTP ${res.status} — ${text || "sem detalhes"}` };
+  } catch(e){ return { ok: false, status: 0, detail: `falha de rede: ${e && e.message ? e.message : e}` }; }
 }
-// Lê os dados mais recentes, aplica a mudança e grava — repete automaticamente
-// se outra pessoa gravou ao mesmo tempo (proteção contra perda de inscrições simultâneas).
-async function mutateBlob(blobId, updaterFn, attempts){
+// Lê o valor mais atual de um caminho, aplica a mudança e grava — repete automaticamente
+// se outra pessoa gravou ao mesmo tempo (protege contra perder inscrições simultâneas).
+async function mutatePath(path, updaterFn, attempts){
   attempts = attempts || 6;
   let lastDetail = "";
   for (let i = 0; i < attempts; i++){
-    const cur = await jbRead(blobId);
-    if (!cur || !cur.data) { lastDetail = cur && cur.error ? cur.error : "não foi possível carregar os dados atuais"; continue; }
-    let newData;
-    try { newData = updaterFn(JSON.parse(JSON.stringify(cur.data))); }
+    const cur = await fbGetWithEtag(path);
+    if (cur.error) { lastDetail = cur.error; continue; }
+    let newValue;
+    try { newValue = updaterFn(cur.data === null || cur.data === undefined ? null : JSON.parse(JSON.stringify(cur.data))); }
     catch(e){ return { ok: false, detail: `erro interno: ${e && e.message ? e.message : e}` }; }
-    const res = await jbWriteRaw(blobId, newData, cur.etag);
-    if (res.ok) return { ok: true, data: newData };
+    const res = await fbPut(path, newValue, cur.etag);
+    if (res.ok) return { ok: true, data: newValue };
     if (res.status === 412) { lastDetail = "conflito de escrita simultânea, tentando de novo…"; continue; }
-    lastDetail = res.error ? `falha de rede: ${res.error}` : `HTTP ${res.status}`;
+    lastDetail = res.detail;
   }
   return { ok: false, detail: lastDetail || "falha desconhecida" };
 }
-const EMPTY_ARENA_DATA = () => ({ config: null, roster: DEFAULT_ROSTER, historico: [], regs: {} });
-
 
 function Toast({ msg }) {
   if (!msg) return null;
@@ -280,53 +270,40 @@ function TierChip({ cluster }) {
 
 function App(){
   const [loading, setLoading] = useState(true);
-  const [bucket, setBucket] = useState(null);
-  const [creatingRoom, setCreatingRoom] = useState(false);
   const [config, setConfig] = useState(null); // {id,date,tema,numGroups,status,createdAt}
   const [regs, setRegs] = useState([]); // current event registrations
   const [roster, setRoster] = useState(DEFAULT_ROSTER);
   const [historico, setHistorico] = useState([]);
   const [tab, setTab] = useState("inscricao");
   const [toast, setToast] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   const showToast = useCallback((m) => { setToast(m); setTimeout(()=>setToast(""), 2600); }, []);
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const b = params.get("sala") || params.get("b");
-    if (b) { setBucket(b); } else { setLoading(false); }
-  }, []);
-
   const papel = new URLSearchParams(window.location.search).get("papel") || "lider";
 
-  const [roomError, setRoomError] = useState("");
-  const handleCreateRoom = async () => {
-    setCreatingRoom(true);
-    setRoomError("");
-    const result = await jbCreate(EMPTY_ARENA_DATA());
-    if (!result.id) {
-      setRoomError(`Detalhe técnico: ${result.error}. Se aparecer algo como "Failed to fetch" ou "rede", tente pelo celular com dados móveis (sem wi-fi). Se for "HTTP 4xx/5xx", me manda essa mensagem que eu ajusto a ferramenta.`);
-      setCreatingRoom(false);
-      return;
-    }
-    const url = new URL(window.location.href);
-    url.searchParams.set("sala", result.id);
-    window.location.href = url.toString();
-  };
-
   useEffect(() => {
-    if (!bucket) return;
     (async () => {
       setLoading(true);
-      const cur = await jbRead(bucket);
-      const parsed = (cur && cur.data) ? cur.data : EMPTY_ARENA_DATA();      const parsedCfg = parsed.config || null;
-      const parsedRoster = (parsed.roster && parsed.roster.length) ? parsed.roster : DEFAULT_ROSTER;
-      const parsedHist = parsed.historico || [];
+      const [cfgR, rostR, histR] = await Promise.all([
+        fbGet("arena/config"),
+        fbGet("arena/roster"),
+        fbGet("arena/historico"),
+      ]);
+      if (cfgR.error && rostR.error && histR.error) {
+        setLoadError(cfgR.error);
+        setLoading(false);
+        return;
+      }
+      const parsedCfg = cfgR.data || null;
+      const parsedRoster = (rostR.data && rostR.data.length) ? rostR.data : DEFAULT_ROSTER;
+      const parsedHist = histR.data || [];
       setConfig(parsedCfg);
       setRoster(parsedRoster);
       setHistorico(parsedHist);
       if (parsedCfg && parsedCfg.id) {
-        setRegs((parsed.regs && parsed.regs[parsedCfg.id]) || []);
+        const regsR = await fbGet(`arena/regs/${parsedCfg.id}`);
+        setRegs(regsR.data || []);
         setTab(parsedCfg.status === "aberta" ? "inscricao" : "grupos");
       } else {
         setRegs([]);
@@ -334,7 +311,7 @@ function App(){
       }
       setLoading(false);
     })();
-  }, [bucket]);
+  }, []);
 
   // ---- CONFIG TAB ACTIONS ----
   const [configError, setConfigError] = useState("");
@@ -342,24 +319,24 @@ function App(){
     setConfigError("");
     const id = nowId(date, tema);
     const newCfg = { id, date, tema, numGroups: Number(numGroups) || 4, status: "aberta", createdAt: Date.now() };
-    const result = await mutateBlob(bucket, (data) => {
-      if (data.config && data.config.status) {
-        const arch = { ...data.config, regs: data.regs[data.config.id] || [], archivedAt: Date.now() };
-        data.historico = [arch, ...(data.historico || [])].slice(0, 30);
-      }
-      data.config = newCfg;
-      data.regs = data.regs || {};
-      data.regs[id] = [];
-      return data;
-    });
-    if (!result.ok) {
-      setConfigError(result.detail);
+
+    if (config && config.status) {
+      const histResult = await mutatePath("arena/historico", (hist) => {
+        const arch = { ...config, regs, archivedAt: Date.now() };
+        return [arch, ...(hist || [])].slice(0, 30);
+      });
+      if (histResult.ok) setHistorico(histResult.data);
+    }
+
+    const r1 = await fbPut("arena/config", newCfg);
+    const r2 = r1.ok ? await fbPut(`arena/regs/${id}`, []) : { ok: false, detail: "não tentado (passo anterior falhou)" };
+    if (!r1.ok || !r2.ok) {
+      setConfigError(!r1.ok ? r1.detail : r2.detail);
       showToast("⚠️ Falha ao salvar.");
       return;
     }
     setConfig(newCfg);
     setRegs([]);
-    setHistorico(result.data.historico || []);
     showToast("Novo Arena Invés criado e inscrições abertas.");
     setTab("inscricao");
   };
@@ -367,7 +344,7 @@ function App(){
   const toggleStatus = async () => {
     if (!config) return;
     const newCfg = { ...config, status: config.status === "aberta" ? "encerrada" : "aberta" };
-    const result = await mutateBlob(bucket, (data) => { data.config = newCfg; return data; });
+    const result = await fbPut("arena/config", newCfg);
     if (!result.ok) { showToast(`⚠️ Falha ao salvar: ${result.detail}`); return; }
     setConfig(newCfg);
     showToast(newCfg.status === "aberta" ? "Inscrições reabertas." : "Inscrições encerradas.");
@@ -376,13 +353,13 @@ function App(){
   const updateNumGroups = async (n) => {
     if (!config) return;
     const newCfg = { ...config, numGroups: Number(n) };
-    const result = await mutateBlob(bucket, (data) => { data.config = newCfg; return data; });
+    const result = await fbPut("arena/config", newCfg);
     if (!result.ok) { showToast(`⚠️ Falha ao salvar: ${result.detail}`); return; }
     setConfig(newCfg);
   };
 
   const saveRoster = async (list) => {
-    const result = await mutateBlob(bucket, (data) => { data.roster = list; return data; });
+    const result = await fbPut("arena/roster", list);
     if (!result.ok) { showToast(`⚠️ Falha ao salvar: ${result.detail}`); return; }
     setRoster(list);
     showToast("Roster de assessores atualizado.");
@@ -404,46 +381,40 @@ function App(){
   const register = async (rosterEntry) => {
     if (!config || config.status !== "aberta") { showToast("As inscrições não estão abertas."); return null; }
     let assignedEntry = null;
-    const result = await mutateBlob(bucket, (data) => {
-      const list = (data.regs && data.regs[config.id]) || [];
+    const result = await mutatePath(`arena/regs/${config.id}`, (list) => {
+      list = list || [];
       const already = list.find(r => r.nome === rosterEntry.nome);
-      if (already) { assignedEntry = already; return data; }
+      if (already) { assignedEntry = already; return list; }
       const grupo = assignGroup(list, config.numGroups, rosterEntry.cluster);
       const entry = { nome: rosterEntry.nome, lider: rosterEntry.lider, ranking: rosterEntry.ranking, cluster: rosterEntry.cluster, grupo, ts: Date.now(), reunioes: 0 };
       assignedEntry = entry;
-      data.regs = data.regs || {};
-      data.regs[config.id] = [...list, entry];
-      return data;
+      return [...list, entry];
     });
     if (!result.ok) { showToast("⚠️ Não foi possível salvar sua inscrição. Verifique a internet e tente de novo."); return null; }
-    setRegs((result.data.regs && result.data.regs[config.id]) || []);
+    setRegs(result.data || []);
     return assignedEntry;
   };
 
   const moveMember = async (nome, newGroup) => {
-    const result = await mutateBlob(bucket, (data) => {
-      const list = (data.regs && data.regs[config.id]) || [];
-      data.regs[config.id] = list.map(r => r.nome === nome ? { ...r, grupo: Number(newGroup) } : r);
-      return data;
-    });
+    const result = await mutatePath(`arena/regs/${config.id}`, (list) => (list || []).map(r => r.nome === nome ? { ...r, grupo: Number(newGroup) } : r));
     if (!result.ok) { showToast(`⚠️ Falha ao mover: ${result.detail}`); return; }
-    setRegs((result.data.regs && result.data.regs[config.id]) || []);
+    setRegs(result.data || []);
     showToast(`${nome} movido para o Grupo ${groupLetter(Number(newGroup))}.`);
   };
 
   const logMeeting = async (nome, delta) => {
-    const result = await mutateBlob(bucket, (data) => {
-      const list = (data.regs && data.regs[config.id]) || [];
-      data.regs[config.id] = list.map(r => r.nome === nome ? { ...r, reunioes: Math.max(0, (r.reunioes || 0) + delta) } : r);
-      return data;
-    });
+    const result = await mutatePath(`arena/regs/${config.id}`, (list) => (list || []).map(r => r.nome === nome ? { ...r, reunioes: Math.max(0, (r.reunioes || 0) + delta) } : r));
     if (!result.ok) { showToast(`⚠️ Falha ao salvar reunião: ${result.detail}`); return; }
-    setRegs((result.data.regs && result.data.regs[config.id]) || []);
+    setRegs(result.data || []);
   };
 
   const shareUrl = (typeof window !== "undefined" && window.location) ? window.location.href : "";
 
-  if (!bucket) {
+  if (loading) {
+    return <div className="arena-wrap"><div className="empty-state"><div className="big">Carregando Arena Invés…</div></div></div>;
+  }
+
+  if (loadError) {
     return (
       <div className="arena-wrap">
         <div className="arena-header">
@@ -452,26 +423,13 @@ function App(){
             <div className="arena-sub">Governança de mobilização · Assessores SP &amp; BH</div>
           </div>
         </div>
-        <div className="card empty-state">
-          <div className="big">Primeiro acesso — crie a sala do Arena Invés</div>
-          <p className="muted-note">Isso cria um espaço de armazenamento compartilhado (gratuito, sem cadastro) onde ficam as inscrições, os grupos e o placar. Faça isso <b>uma única vez</b>; depois disso, use sempre o mesmo link para tudo — configurar, se inscrever e acompanhar o placar.</p>
-          <div style={{ marginTop: 16 }}>
-            <button className="btn btn-primary" disabled={creatingRoom} onClick={handleCreateRoom}>{creatingRoom ? "Criando sala…" : (roomError ? "Tentar novamente" : "Criar sala do Arena Invés")}</button>
-          </div>
-          {roomError && (
-            <div className="card" style={{ marginTop: 14, borderColor: "var(--danger)", background: "rgba(224,85,111,0.08)", textAlign: "left" }}>
-              <b style={{ color: "var(--danger)" }}>Não deu certo</b>
-              <p className="muted-note" style={{ marginTop: 6 }}>{roomError}</p>
-            </div>
-          )}
+        <div className="card" style={{ borderColor: "var(--danger)", background: "rgba(224,85,111,0.08)" }}>
+          <b style={{ color: "var(--danger)" }}>Não foi possível conectar ao banco de dados</b>
+          <p className="muted-note" style={{ marginTop: 6 }}>Detalhe técnico: {loadError}</p>
         </div>
-        <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v13</div>
+        <button className="btn btn-primary" onClick={()=>window.location.reload()}>Tentar de novo</button>
       </div>
     );
-  }
-
-  if (loading) {
-    return <div className="arena-wrap"><div className="empty-state"><div className="big">Carregando Arena Invés…</div></div></div>;
   }
 
   if (papel === "assessor") {
@@ -490,7 +448,7 @@ function App(){
         </div>
         <AssessorView config={config} regs={regs} roster={roster} onRegister={register} onLogMeeting={logMeeting} />
         <Toast msg={toast} />
-        <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v13</div>
+        <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v14</div>
       </div>
     );
   }
@@ -540,7 +498,7 @@ function App(){
       )}
 
       <Toast msg={toast} />
-      <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v13</div>
+      <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v14</div>
     </div>
   );
 }
@@ -649,7 +607,7 @@ function ConfigTab({ config, roster, shareUrl, configError, onStart, onToggleSta
             <p className="muted-note">Esse é o link/QR que vai para o telão e para o grupo do WhatsApp. Ele abre a tela simplificada: escolher nome → ver o time → lançar reuniões agendadas → acompanhar o placar. Nada de configuração aparece aqui.</p>
           </div>
         </div>
-        <p className="muted-note"><b>Este link já funciona para qualquer pessoa</b>, sem precisar de conta — os dados ficam salvos na nuvem (KVdb). Hospede este arquivo HTML em algum lugar com link público (ex: GitHub Pages) e use exatamente essa URL no QR code.</p>
+        <p className="muted-note"><b>Este link já funciona para qualquer pessoa</b>, sem precisar de conta — os dados ficam salvos no banco de dados do Firebase da Invés. Hospede este arquivo HTML em algum lugar com link público (ex: GitHub Pages) e use exatamente essa URL no QR code.</p>
       </div>
 
       <div className="card">
