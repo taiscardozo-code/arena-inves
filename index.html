@@ -238,12 +238,28 @@ async function storageGet(bucket, key){
     return await res.text();
   } catch(e){ console.error("storage get failed", key, e); return null; }
 }
-async function storageSet(bucket, key, value){
-  if (!bucket) return false;
+async function storageSetDebug(bucket, key, value){
+  if (!bucket) return { ok: false, detail: "sem sala definida" };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
   try {
-    const res = await fetch(`https://kvdb.io/${bucket}/${encodeURIComponent(key)}`, { method: "POST", body: value });
-    return res.ok;
-  } catch(e){ console.error("storage set failed", key, e); return false; }
+    const res = await fetch(`https://kvdb.io/${bucket}/${encodeURIComponent(key)}`, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: value,
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+    const text = await res.text().catch(()=> "");
+    return { ok: res.ok, detail: `HTTP ${res.status} ${res.statusText || ""} — ${text || "sem corpo de resposta"}` };
+  } catch(e){
+    clearTimeout(timeout);
+    return { ok: false, detail: (e && e.name === "AbortError") ? "tempo esgotado (sem resposta em 10s)" : `falha de rede: ${e && e.message ? e.message : e}` };
+  }
+}
+async function storageSet(bucket, key, value){
+  const r = await storageSetDebug(bucket, key, value);
+  return r.ok;
 }
 
 function Toast({ msg }) {
@@ -325,7 +341,9 @@ function App(){
   }, [bucket]);
 
   // ---- CONFIG TAB ACTIONS ----
+  const [configError, setConfigError] = useState("");
   const startNewArena = async ({ date, tema, numGroups }) => {
+    setConfigError("");
     if (config && config.status) {
       const arch = { ...config, regs, archivedAt: Date.now() };
       const newHist = [arch, ...historico].slice(0, 30);
@@ -334,10 +352,12 @@ function App(){
     }
     const id = nowId(date, tema);
     const newCfg = { id, date, tema, numGroups: Number(numGroups) || 4, status: "aberta", createdAt: Date.now() };
-    const ok1 = await storageSet(bucket, "arena:config", JSON.stringify(newCfg));
-    const ok2 = await storageSet(bucket, `arena:regs:${id}`, JSON.stringify([]));
-    if (!ok1 || !ok2) {
-      showToast("⚠️ Não foi possível salvar na nuvem. Verifique sua internet e tente iniciar de novo.");
+    const r1 = await storageSetDebug(bucket, "arena:config", JSON.stringify(newCfg));
+    const r2 = r1.ok ? await storageSetDebug(bucket, `arena:regs:${id}`, JSON.stringify([])) : { ok: false, detail: "não tentado (passo anterior falhou)" };
+    if (!r1.ok || !r2.ok) {
+      const detail = !r1.ok ? r1.detail : r2.detail;
+      setConfigError(detail);
+      showToast(`⚠️ Falha ao salvar.`);
       return;
     }
     setConfig(newCfg);
@@ -436,7 +456,7 @@ function App(){
             </div>
           )}
         </div>
-        <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v9</div>
+        <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v10</div>
       </div>
     );
   }
@@ -461,7 +481,7 @@ function App(){
         </div>
         <AssessorView config={config} regs={regs} roster={roster} onRegister={register} onLogMeeting={logMeeting} />
         <Toast msg={toast} />
-        <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v9</div>
+        <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v10</div>
       </div>
     );
   }
@@ -489,7 +509,7 @@ function App(){
       </div>
 
       {tab === "configurar" && (
-        <ConfigTab config={config} roster={roster} shareUrl={shareUrl}
+        <ConfigTab config={config} roster={roster} shareUrl={shareUrl} configError={configError}
           onStart={startNewArena} onToggleStatus={toggleStatus} onUpdateNumGroups={updateNumGroups}
           onSaveRoster={saveRoster} showToast={showToast} />
       )}
@@ -511,12 +531,12 @@ function App(){
       )}
 
       <Toast msg={toast} />
-      <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v9</div>
+      <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v10</div>
     </div>
   );
 }
 
-function ConfigTab({ config, roster, shareUrl, onStart, onToggleStatus, onUpdateNumGroups, onSaveRoster, showToast }) {
+function ConfigTab({ config, roster, shareUrl, configError, onStart, onToggleStatus, onUpdateNumGroups, onSaveRoster, showToast }) {
   const [date, setDate] = useState(config?.date || "");
   const [temaSel, setTemaSel] = useState(TEMA_OPTIONS[0]);
   const [temaCustom, setTemaCustom] = useState("");
@@ -581,6 +601,12 @@ function ConfigTab({ config, roster, shareUrl, onStart, onToggleStatus, onUpdate
           {config ? "Encerrar atual e iniciar novo Arena" : "Iniciar Arena e abrir inscrições"}
         </button>
         {config && <p className="muted-note">Iniciar um novo Arena arquiva automaticamente o atual (com os grupos formados) na aba Histórico — nada se perde.</p>}
+        {configError && (
+          <div className="card" style={{ marginTop: 14, borderColor: "var(--danger)", background: "rgba(224,85,111,0.08)" }}>
+            <b style={{ color: "var(--danger)" }}>Detalhe técnico do erro</b>
+            <p className="muted-note" style={{ marginTop: 6, fontFamily: "var(--font-mono)" }}>{configError}</p>
+          </div>
+        )}
       </div>
 
       {config && (
