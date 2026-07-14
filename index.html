@@ -231,11 +231,11 @@ async function jbCreate(initialData){
 async function jbRead(blobId){
   try {
     const res = await fetch(`https://jsonblob.com/api/jsonBlob/${blobId}`, { headers: { "Accept": "application/json" } });
-    if (!res.ok) return null;
+    if (!res.ok) return { data: null, etag: null, error: `HTTP ${res.status}` };
     const etag = res.headers.get("ETag") || res.headers.get("etag") || "";
     const data = await res.json();
-    return { data, etag };
-  } catch(e){ console.error("jbRead failed", e); return null; }
+    return { data, etag, error: null };
+  } catch(e){ return { data: null, etag: null, error: `falha de rede: ${e && e.message ? e.message : e}` }; }
 }
 async function jbWriteRaw(blobId, data, etag){
   try {
@@ -252,7 +252,7 @@ async function mutateBlob(blobId, updaterFn, attempts){
   let lastDetail = "";
   for (let i = 0; i < attempts; i++){
     const cur = await jbRead(blobId);
-    if (!cur) { lastDetail = "não foi possível carregar os dados atuais (verifique a internet)"; continue; }
+    if (!cur || !cur.data) { lastDetail = cur && cur.error ? cur.error : "não foi possível carregar os dados atuais"; continue; }
     let newData;
     try { newData = updaterFn(JSON.parse(JSON.stringify(cur.data))); }
     catch(e){ return { ok: false, detail: `erro interno: ${e && e.message ? e.message : e}` }; }
@@ -319,8 +319,7 @@ function App(){
     (async () => {
       setLoading(true);
       const cur = await jbRead(bucket);
-      const parsed = (cur && cur.data) ? cur.data : EMPTY_ARENA_DATA();
-      const parsedCfg = parsed.config || null;
+      const parsed = (cur && cur.data) ? cur.data : EMPTY_ARENA_DATA();      const parsedCfg = parsed.config || null;
       const parsedRoster = (parsed.roster && parsed.roster.length) ? parsed.roster : DEFAULT_ROSTER;
       const parsedHist = parsed.historico || [];
       setConfig(parsedCfg);
@@ -466,7 +465,7 @@ function App(){
             </div>
           )}
         </div>
-        <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v12</div>
+        <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v13</div>
       </div>
     );
   }
@@ -491,7 +490,7 @@ function App(){
         </div>
         <AssessorView config={config} regs={regs} roster={roster} onRegister={register} onLogMeeting={logMeeting} />
         <Toast msg={toast} />
-        <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v12</div>
+        <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v13</div>
       </div>
     );
   }
@@ -541,7 +540,7 @@ function App(){
       )}
 
       <Toast msg={toast} />
-      <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v12</div>
+      <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v13</div>
     </div>
   );
 }
