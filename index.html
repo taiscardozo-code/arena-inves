@@ -241,7 +241,7 @@ async function storageGet(bucket, key){
 async function storageSet(bucket, key, value){
   if (!bucket) return false;
   try {
-    const res = await fetch(`https://kvdb.io/${bucket}/${encodeURIComponent(key)}`, { method: "PUT", body: value });
+    const res = await fetch(`https://kvdb.io/${bucket}/${encodeURIComponent(key)}`, { method: "POST", body: value });
     return res.ok;
   } catch(e){ console.error("storage set failed", key, e); return false; }
 }
@@ -334,8 +334,12 @@ function App(){
     }
     const id = nowId(date, tema);
     const newCfg = { id, date, tema, numGroups: Number(numGroups) || 4, status: "aberta", createdAt: Date.now() };
-    await storageSet(bucket, "arena:config", JSON.stringify(newCfg));
-    await storageSet(bucket, `arena:regs:${id}`, JSON.stringify([]));
+    const ok1 = await storageSet(bucket, "arena:config", JSON.stringify(newCfg));
+    const ok2 = await storageSet(bucket, `arena:regs:${id}`, JSON.stringify([]));
+    if (!ok1 || !ok2) {
+      showToast("⚠️ Não foi possível salvar na nuvem. Verifique sua internet e tente iniciar de novo.");
+      return;
+    }
     setConfig(newCfg);
     setRegs([]);
     showToast("Novo Arena Invés criado e inscrições abertas.");
@@ -386,7 +390,8 @@ function App(){
     const grupo = assignGroup(list, config.numGroups, rosterEntry.cluster);
     const entry = { nome: rosterEntry.nome, lider: rosterEntry.lider, ranking: rosterEntry.ranking, cluster: rosterEntry.cluster, grupo, ts: Date.now(), reunioes: 0 };
     const newList = [...list, entry];
-    await storageSet(bucket, `arena:regs:${config.id}`, JSON.stringify(newList));
+    const ok = await storageSet(bucket, `arena:regs:${config.id}`, JSON.stringify(newList));
+    if (!ok) { showToast("⚠️ Não foi possível salvar sua inscrição. Verifique a internet e tente de novo."); return null; }
     setRegs(newList);
     return entry;
   };
@@ -431,7 +436,7 @@ function App(){
             </div>
           )}
         </div>
-        <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v7</div>
+        <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v9</div>
       </div>
     );
   }
@@ -456,7 +461,7 @@ function App(){
         </div>
         <AssessorView config={config} regs={regs} roster={roster} onRegister={register} onLogMeeting={logMeeting} />
         <Toast msg={toast} />
-        <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v7</div>
+        <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v9</div>
       </div>
     );
   }
@@ -506,7 +511,7 @@ function App(){
       )}
 
       <Toast msg={toast} />
-      <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v7</div>
+      <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v9</div>
     </div>
   );
 }
