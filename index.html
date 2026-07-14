@@ -208,59 +208,63 @@ function slugify(s){ return s.toLowerCase().normalize("NFD").replace(/[\u0300-\u
 function nowId(dateStr, tema){ return `${dateStr || 'sem-data'}__${slugify(tema||'tema')}__${Date.now()}`; }
 function groupLetter(i){ return String.fromCharCode(65+i); }
 
-async function createBucket(){
-  const tryOnce = async (body) => {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-    try {
-      const res = await fetch("https://kvdb.io/", { method: "POST", body, signal: controller.signal });
-      clearTimeout(timeout);
-      const text = (await res.text()).trim();
-      if (!res.ok) return { id: null, error: `HTTP ${res.status}: ${text || "sem detalhes"}` };
-      return { id: text || null, error: text ? null : "resposta vazia do servidor" };
-    } catch(e){
-      clearTimeout(timeout);
-      return { id: null, error: (e && e.name === "AbortError") ? "tempo esgotado (sem resposta em 10s)" : `falha de rede (${e && e.message ? e.message : e})` };
-    }
-  };
-  let r1 = await tryOnce(undefined);
-  if (r1.id) return r1;
-  let r2 = await tryOnce(new URLSearchParams({ email: "arena@inves.com.br" }));
-  if (r2.id) return r2;
-  return { id: null, error: `Tentativa 1: ${r1.error} · Tentativa 2: ${r2.error}` };
-}
-async function storageGet(bucket, key){
-  if (!bucket) return null;
-  try {
-    const res = await fetch(`https://kvdb.io/${bucket}/${encodeURIComponent(key)}`);
-    if (res.status === 404) return null;
-    if (!res.ok) return null;
-    return await res.text();
-  } catch(e){ console.error("storage get failed", key, e); return null; }
-}
-async function storageSetDebug(bucket, key, value){
-  if (!bucket) return { ok: false, detail: "sem sala definida" };
+async function jbCreate(initialData){
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000);
   try {
-    const res = await fetch(`https://kvdb.io/${bucket}/${encodeURIComponent(key)}`, {
+    const res = await fetch("https://jsonblob.com/api/jsonBlob", {
       method: "POST",
-      headers: { "Content-Type": "text/plain" },
-      body: value,
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify(initialData),
       signal: controller.signal
     });
     clearTimeout(timeout);
-    const text = await res.text().catch(()=> "");
-    return { ok: res.ok, detail: `HTTP ${res.status} ${res.statusText || ""} — ${text || "sem corpo de resposta"}` };
+    if (!res.ok) return { id: null, error: `HTTP ${res.status}` };
+    const location = res.headers.get("Location") || res.headers.get("location") || "";
+    const id = location ? location.split("/").filter(Boolean).pop() : null;
+    return { id, error: id ? null : "resposta sem identificador da sala" };
   } catch(e){
     clearTimeout(timeout);
-    return { ok: false, detail: (e && e.name === "AbortError") ? "tempo esgotado (sem resposta em 10s)" : `falha de rede: ${e && e.message ? e.message : e}` };
+    return { id: null, error: (e && e.name === "AbortError") ? "tempo esgotado (sem resposta em 10s)" : `falha de rede (${e && e.message ? e.message : e})` };
   }
 }
-async function storageSet(bucket, key, value){
-  const r = await storageSetDebug(bucket, key, value);
-  return r.ok;
+async function jbRead(blobId){
+  try {
+    const res = await fetch(`https://jsonblob.com/api/jsonBlob/${blobId}`, { headers: { "Accept": "application/json" } });
+    if (!res.ok) return null;
+    const etag = res.headers.get("ETag") || res.headers.get("etag") || "";
+    const data = await res.json();
+    return { data, etag };
+  } catch(e){ console.error("jbRead failed", e); return null; }
 }
+async function jbWriteRaw(blobId, data, etag){
+  try {
+    const headers = { "Content-Type": "application/json", "Accept": "application/json" };
+    if (etag) headers["If-Match"] = etag;
+    const res = await fetch(`https://jsonblob.com/api/jsonBlob/${blobId}`, { method: "PUT", headers, body: JSON.stringify(data) });
+    return { ok: res.ok, status: res.status };
+  } catch(e){ return { ok: false, status: 0, error: e && e.message ? e.message : String(e) }; }
+}
+// Lê os dados mais recentes, aplica a mudança e grava — repete automaticamente
+// se outra pessoa gravou ao mesmo tempo (proteção contra perda de inscrições simultâneas).
+async function mutateBlob(blobId, updaterFn, attempts){
+  attempts = attempts || 6;
+  let lastDetail = "";
+  for (let i = 0; i < attempts; i++){
+    const cur = await jbRead(blobId);
+    if (!cur) { lastDetail = "não foi possível carregar os dados atuais (verifique a internet)"; continue; }
+    let newData;
+    try { newData = updaterFn(JSON.parse(JSON.stringify(cur.data))); }
+    catch(e){ return { ok: false, detail: `erro interno: ${e && e.message ? e.message : e}` }; }
+    const res = await jbWriteRaw(blobId, newData, cur.etag);
+    if (res.ok) return { ok: true, data: newData };
+    if (res.status === 412) { lastDetail = "conflito de escrita simultânea, tentando de novo…"; continue; }
+    lastDetail = res.error ? `falha de rede: ${res.error}` : `HTTP ${res.status}`;
+  }
+  return { ok: false, detail: lastDetail || "falha desconhecida" };
+}
+const EMPTY_ARENA_DATA = () => ({ config: null, roster: DEFAULT_ROSTER, historico: [], regs: {} });
+
 
 function Toast({ msg }) {
   if (!msg) return null;
@@ -299,7 +303,7 @@ function App(){
   const handleCreateRoom = async () => {
     setCreatingRoom(true);
     setRoomError("");
-    const result = await createBucket();
+    const result = await jbCreate(EMPTY_ARENA_DATA());
     if (!result.id) {
       setRoomError(`Detalhe técnico: ${result.error}. Se aparecer algo como "Failed to fetch" ou "rede", tente pelo celular com dados móveis (sem wi-fi). Se for "HTTP 4xx/5xx", me manda essa mensagem que eu ajusto a ferramenta.`);
       setCreatingRoom(false);
@@ -314,54 +318,49 @@ function App(){
     if (!bucket) return;
     (async () => {
       setLoading(true);
-      const cfg = await storageGet(bucket, "arena:config");
-      const rost = await storageGet(bucket, "arena:roster");
-      const hist = await storageGet(bucket, "arena:historico");
-      let parsedCfg = null, parsedRoster = DEFAULT_ROSTER, parsedHist = [];
-      try { parsedCfg = cfg ? JSON.parse(cfg) : null; } catch(e){}
-      try { parsedRoster = rost ? JSON.parse(rost) : DEFAULT_ROSTER; } catch(e){}
-      try { parsedHist = hist ? JSON.parse(hist) : []; } catch(e){}
+      const cur = await jbRead(bucket);
+      const parsed = (cur && cur.data) ? cur.data : EMPTY_ARENA_DATA();
+      const parsedCfg = parsed.config || null;
+      const parsedRoster = (parsed.roster && parsed.roster.length) ? parsed.roster : DEFAULT_ROSTER;
+      const parsedHist = parsed.historico || [];
       setConfig(parsedCfg);
       setRoster(parsedRoster);
       setHistorico(parsedHist);
       if (parsedCfg && parsedCfg.id) {
-        const r = await storageGet(bucket, `arena:regs:${parsedCfg.id}`);
-        try { setRegs(r ? JSON.parse(r) : []); } catch(e){ setRegs([]); }
+        setRegs((parsed.regs && parsed.regs[parsedCfg.id]) || []);
         setTab(parsedCfg.status === "aberta" ? "inscricao" : "grupos");
       } else {
+        setRegs([]);
         setTab("configurar");
       }
       setLoading(false);
     })();
   }, [bucket]);
 
-  const refreshRegs = useCallback(async (id) => {
-    const r = await storageGet(bucket, `arena:regs:${id}`);
-    try { setRegs(r ? JSON.parse(r) : []); } catch(e){ setRegs([]); }
-  }, [bucket]);
-
   // ---- CONFIG TAB ACTIONS ----
   const [configError, setConfigError] = useState("");
   const startNewArena = async ({ date, tema, numGroups }) => {
     setConfigError("");
-    if (config && config.status) {
-      const arch = { ...config, regs, archivedAt: Date.now() };
-      const newHist = [arch, ...historico].slice(0, 30);
-      await storageSet(bucket, "arena:historico", JSON.stringify(newHist));
-      setHistorico(newHist);
-    }
     const id = nowId(date, tema);
     const newCfg = { id, date, tema, numGroups: Number(numGroups) || 4, status: "aberta", createdAt: Date.now() };
-    const r1 = await storageSetDebug(bucket, "arena:config", JSON.stringify(newCfg));
-    const r2 = r1.ok ? await storageSetDebug(bucket, `arena:regs:${id}`, JSON.stringify([])) : { ok: false, detail: "não tentado (passo anterior falhou)" };
-    if (!r1.ok || !r2.ok) {
-      const detail = !r1.ok ? r1.detail : r2.detail;
-      setConfigError(detail);
-      showToast(`⚠️ Falha ao salvar.`);
+    const result = await mutateBlob(bucket, (data) => {
+      if (data.config && data.config.status) {
+        const arch = { ...data.config, regs: data.regs[data.config.id] || [], archivedAt: Date.now() };
+        data.historico = [arch, ...(data.historico || [])].slice(0, 30);
+      }
+      data.config = newCfg;
+      data.regs = data.regs || {};
+      data.regs[id] = [];
+      return data;
+    });
+    if (!result.ok) {
+      setConfigError(result.detail);
+      showToast("⚠️ Falha ao salvar.");
       return;
     }
     setConfig(newCfg);
     setRegs([]);
+    setHistorico(result.data.historico || []);
     showToast("Novo Arena Invés criado e inscrições abertas.");
     setTab("inscricao");
   };
@@ -369,7 +368,8 @@ function App(){
   const toggleStatus = async () => {
     if (!config) return;
     const newCfg = { ...config, status: config.status === "aberta" ? "encerrada" : "aberta" };
-    await storageSet(bucket, "arena:config", JSON.stringify(newCfg));
+    const result = await mutateBlob(bucket, (data) => { data.config = newCfg; return data; });
+    if (!result.ok) { showToast(`⚠️ Falha ao salvar: ${result.detail}`); return; }
     setConfig(newCfg);
     showToast(newCfg.status === "aberta" ? "Inscrições reabertas." : "Inscrições encerradas.");
   };
@@ -377,12 +377,14 @@ function App(){
   const updateNumGroups = async (n) => {
     if (!config) return;
     const newCfg = { ...config, numGroups: Number(n) };
-    await storageSet(bucket, "arena:config", JSON.stringify(newCfg));
+    const result = await mutateBlob(bucket, (data) => { data.config = newCfg; return data; });
+    if (!result.ok) { showToast(`⚠️ Falha ao salvar: ${result.detail}`); return; }
     setConfig(newCfg);
   };
 
   const saveRoster = async (list) => {
-    await storageSet(bucket, "arena:roster", JSON.stringify(list));
+    const result = await mutateBlob(bucket, (data) => { data.roster = list; return data; });
+    if (!result.ok) { showToast(`⚠️ Falha ao salvar: ${result.detail}`); return; }
     setRoster(list);
     showToast("Roster de assessores atualizado.");
   };
@@ -402,34 +404,42 @@ function App(){
 
   const register = async (rosterEntry) => {
     if (!config || config.status !== "aberta") { showToast("As inscrições não estão abertas."); return null; }
-    const fresh = await storageGet(bucket, `arena:regs:${config.id}`);
-    let list = [];
-    try { list = fresh ? JSON.parse(fresh) : []; } catch(e){ list = []; }
-    const already = list.find(r => r.nome === rosterEntry.nome);
-    if (already) { setRegs(list); return already; }
-    const grupo = assignGroup(list, config.numGroups, rosterEntry.cluster);
-    const entry = { nome: rosterEntry.nome, lider: rosterEntry.lider, ranking: rosterEntry.ranking, cluster: rosterEntry.cluster, grupo, ts: Date.now(), reunioes: 0 };
-    const newList = [...list, entry];
-    const ok = await storageSet(bucket, `arena:regs:${config.id}`, JSON.stringify(newList));
-    if (!ok) { showToast("⚠️ Não foi possível salvar sua inscrição. Verifique a internet e tente de novo."); return null; }
-    setRegs(newList);
-    return entry;
+    let assignedEntry = null;
+    const result = await mutateBlob(bucket, (data) => {
+      const list = (data.regs && data.regs[config.id]) || [];
+      const already = list.find(r => r.nome === rosterEntry.nome);
+      if (already) { assignedEntry = already; return data; }
+      const grupo = assignGroup(list, config.numGroups, rosterEntry.cluster);
+      const entry = { nome: rosterEntry.nome, lider: rosterEntry.lider, ranking: rosterEntry.ranking, cluster: rosterEntry.cluster, grupo, ts: Date.now(), reunioes: 0 };
+      assignedEntry = entry;
+      data.regs = data.regs || {};
+      data.regs[config.id] = [...list, entry];
+      return data;
+    });
+    if (!result.ok) { showToast("⚠️ Não foi possível salvar sua inscrição. Verifique a internet e tente de novo."); return null; }
+    setRegs((result.data.regs && result.data.regs[config.id]) || []);
+    return assignedEntry;
   };
 
   const moveMember = async (nome, newGroup) => {
-    const newList = regs.map(r => r.nome === nome ? { ...r, grupo: Number(newGroup) } : r);
-    await storageSet(bucket, `arena:regs:${config.id}`, JSON.stringify(newList));
-    setRegs(newList);
+    const result = await mutateBlob(bucket, (data) => {
+      const list = (data.regs && data.regs[config.id]) || [];
+      data.regs[config.id] = list.map(r => r.nome === nome ? { ...r, grupo: Number(newGroup) } : r);
+      return data;
+    });
+    if (!result.ok) { showToast(`⚠️ Falha ao mover: ${result.detail}`); return; }
+    setRegs((result.data.regs && result.data.regs[config.id]) || []);
     showToast(`${nome} movido para o Grupo ${groupLetter(Number(newGroup))}.`);
   };
 
   const logMeeting = async (nome, delta) => {
-    const fresh = await storageGet(bucket, `arena:regs:${config.id}`);
-    let list = [];
-    try { list = fresh ? JSON.parse(fresh) : []; } catch(e){ list = regs; }
-    const newList = list.map(r => r.nome === nome ? { ...r, reunioes: Math.max(0, (r.reunioes || 0) + delta) } : r);
-    await storageSet(bucket, `arena:regs:${config.id}`, JSON.stringify(newList));
-    setRegs(newList);
+    const result = await mutateBlob(bucket, (data) => {
+      const list = (data.regs && data.regs[config.id]) || [];
+      data.regs[config.id] = list.map(r => r.nome === nome ? { ...r, reunioes: Math.max(0, (r.reunioes || 0) + delta) } : r);
+      return data;
+    });
+    if (!result.ok) { showToast(`⚠️ Falha ao salvar reunião: ${result.detail}`); return; }
+    setRegs((result.data.regs && result.data.regs[config.id]) || []);
   };
 
   const shareUrl = (typeof window !== "undefined" && window.location) ? window.location.href : "";
@@ -456,7 +466,7 @@ function App(){
             </div>
           )}
         </div>
-        <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v11</div>
+        <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v12</div>
       </div>
     );
   }
@@ -481,7 +491,7 @@ function App(){
         </div>
         <AssessorView config={config} regs={regs} roster={roster} onRegister={register} onLogMeeting={logMeeting} />
         <Toast msg={toast} />
-        <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v11</div>
+        <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v12</div>
       </div>
     );
   }
@@ -531,7 +541,7 @@ function App(){
       )}
 
       <Toast msg={toast} />
-      <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v11</div>
+      <div style={{ textAlign: "center", marginTop: 24, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", opacity: 0.6 }}>build 2026-07-14-v12</div>
     </div>
   );
 }
